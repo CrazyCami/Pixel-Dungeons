@@ -1,0 +1,10 @@
+{
+  "items": {
+    "iron_sword": {"name": "Iron Sword", "tags": ["sword", "warrior"], "power": 3},
+    "wood_staff": {"name": "Wooden Staff", "tags": ["staff", "mage"], "power": 3},
+    "leather_dagger": {"name": "Leather Dagger", "tags": ["dagger", "rogue"], "power": 2},
+    "robe": {"name": "Mage Robe", "tags": ["robe", "mage"], "power": 1},
+    "chain_armor": {"name": "Chain Armor", "tags": ["armor_heavy", "warrior"], "power": 2},
+    "light_armor": {"name": "Light Armor", "tags": ["armor_light", "rogue"], "power": 2}
+  }
+}

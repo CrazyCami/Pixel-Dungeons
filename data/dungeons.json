@@ -1,0 +1,24 @@
+{
+  "dungeons": {
+    "dungeon_1": {
+      "name": "Crypt of Trials",
+      "difficulty": 1,
+      "enemy_table_id": "basic",
+      "boss_id": "crypt_boss",
+      "loot_table_id": "dungeon_1"
+    }
+  },
+  "enemy_tables": {
+    "basic": [
+      {"enemy_id": "slime", "weight": 70},
+      {"enemy_id": "skeleton", "weight": 30}
+    ]
+  },
+  "bosses": {
+    "crypt_boss": {"name": "Bone Lord", "hp": 60, "attack": 6}
+  },
+  "enemies": {
+    "slime": {"name": "Slime", "hp": 10, "attack": 2},
+    "skeleton": {"name": "Skeleton", "hp": 16, "attack": 3}
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "tables": {
+    "dungeon_1": [
+      {"item_id": "iron_sword", "weight": 30, "min_qty": 1, "max_qty": 1, "tags": ["sword", "warrior"]},
+      {"item_id": "wood_staff", "weight": 30, "min_qty": 1, "max_qty": 1, "tags": ["staff", "mage"]},
+      {"item_id": "leather_dagger", "weight": 30, "min_qty": 1, "max_qty": 1, "tags": ["dagger", "rogue"]},
+      {"item_id": "robe", "weight": 20, "min_qty": 1, "max_qty": 1, "tags": ["robe", "mage"]},
+      {"item_id": "chain_armor", "weight": 20, "min_qty": 1, "max_qty": 1, "tags": ["armor_heavy", "warrior"]},
+      {"item_id": "light_armor", "weight": 20, "min_qty": 1, "max_qty": 1, "tags": ["armor_light", "rogue"]}
+    ]
+  }
+}

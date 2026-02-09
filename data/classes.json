@@ -1,0 +1,99 @@
+{
+  "spin_table": [
+    {
+      "class_id": "none",
+      "weight": 30
+    },
+    {
+      "class_id": "warrior",
+      "weight": 20
+    },
+    {
+      "class_id": "tank",
+      "weight": 15
+    },
+    {
+      "class_id": "mage",
+      "weight": 15
+    },
+    {
+      "class_id": "assassin",
+      "weight": 10
+    },
+    {
+      "class_id": "musketeer",
+      "weight": 10
+    }
+  ],
+  "classes": {
+    "none": {
+      "name": "None",
+      "perks": [],
+      "ability": "",
+      "cooldown_seconds": null,
+      "loot_affinity_tags": [],
+      "ability_ids": []
+    },
+    "warrior": {
+      "name": "Warrior",
+      "perks": [
+        "10 physical damage",
+        "10 speed",
+        "10 hp"
+      ],
+      "ability": "Double blade: \nCan attack 30% faster for 5 seconds and cool down is 25% faster for all abilities",
+      "cooldown_seconds": 25,
+      "loot_affinity_tags": [],
+      "ability_ids": []
+    },
+    "tank": {
+      "name": "Tank",
+      "perks": [
+        "30 hp",
+        "10 physical damage",
+        "-10 speed"
+      ],
+      "ability": "Strong hand: \nGives a 100 hp sheild to the character and buffs the physical damage by 100% for the next basic attack",
+      "cooldown_seconds": 25,
+      "loot_affinity_tags": [],
+      "ability_ids": []
+    },
+    "mage": {
+      "name": "Mage",
+      "perks": [
+        "40 magic damage",
+        "-5 speed",
+        "-5 health",
+        "-5 physical damage"
+      ],
+      "ability": "Fireball:\nYour next attack shoots a fireball, dealing 150% extra damage",
+      "cooldown_seconds": 15,
+      "loot_affinity_tags": [],
+      "ability_ids": []
+    },
+    "assassin": {
+      "name": "Assassin",
+      "perks": [
+        "20 speed",
+        "20 physical damage",
+        "-10 hp"
+      ],
+      "ability": "Smoke bomb: \nGoes invisble for 5 seconds and heals 10% of max health every second while invisble",
+      "cooldown_seconds": 30,
+      "loot_affinity_tags": [],
+      "ability_ids": []
+    },
+    "musketeer": {
+      "name": "Musketeer",
+      "perks": [
+        "15 speed",
+        "30 physical damage",
+        "-10 hp"
+      ],
+      "ability": "Triple shot: \nShoots 3 bullets that deal 5% increased damage and stuns the enemy for 1.5 seconds",
+      "cooldown_seconds": 20,
+      "loot_affinity_tags": [],
+      "ability_ids": []
+    }
+  }
+}
