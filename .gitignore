@@ -1,0 +1,12 @@
+# OS/Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Node/JS
+node_modules/
+dist/
+.parcel-cache/
+.vite/
+*.log

@@ -1,8 +1,6 @@
-# Pixel Dungeons (Python)
+# Pixel Dungeons (Kaplay.js)
 
-A game that is fun.
-
-Minimal real-time 2D dungeon prototype scaffold in Python (pygame). This is a starting base for:
+Minimal real-time 2D dungeon prototype scaffold in Kaplay.js. This is a starting base for:
 - class spin system
 - dungeon + enemy + loot tables
 - class-tailored loot drops
@@ -10,7 +8,20 @@ Minimal real-time 2D dungeon prototype scaffold in Python (pygame). This is a st
 
 ## Setup
 
+Kaplay uses ES modules, so you need to run a local web server.
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+npx http-server -c-1 -p 5173
+```
+
+Then open: `http://localhost:5173`
+
+## Controls
+- Move: WASD or Arrow keys
+- Spin Class: R
+- Start Dungeon: Enter
+
+## Notes
+- Data lives under `data/` as JSON.
+- The game entry point is `src/main.js`.
+- Art can be added under `assets/` and loaded in `src/main.js`.
