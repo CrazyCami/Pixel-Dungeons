@@ -37,9 +37,9 @@
     "warrior": {
       "name": "Warrior",
       "perks": [
-        "10 physical damage",
-        "10 speed",
-        "10 hp"
+        "+10 physical damage",
+        "+10 speed",
+        "+10 hp"
       ],
       "ability": "Double blade: \nCan attack 30% faster for 5 seconds and cool down is 25% faster for all abilities",
       "cooldown_seconds": 25,
@@ -49,8 +49,8 @@
     "tank": {
       "name": "Tank",
       "perks": [
-        "30 hp",
-        "10 physical damage",
+        "+30 hp",
+        "+10 physical damage",
         "-10 speed"
       ],
       "ability": "Strong hand: \nGives a 100 hp sheild to the character and buffs the physical damage by 100% for the next basic attack",
@@ -61,7 +61,7 @@
     "mage": {
       "name": "Mage",
       "perks": [
-        "40 magic damage",
+        "+40 magic damage",
         "-5 speed",
         "-5 health",
         "-5 physical damage"
@@ -74,8 +74,8 @@
     "assassin": {
       "name": "Assassin",
       "perks": [
-        "20 speed",
-        "20 physical damage",
+        "+20 speed",
+        "+20 physical damage",
         "-10 hp"
       ],
       "ability": "Smoke bomb: \nGoes invisble for 5 seconds and heals 10% of max health every second while invisble",
@@ -86,8 +86,8 @@
     "musketeer": {
       "name": "Musketeer",
       "perks": [
-        "15 speed",
-        "30 physical damage",
+        "+15 speed",
+        "+30 physical damage",
         "-10 hp"
       ],
       "ability": "Triple shot: \nShoots 3 bullets that deal 5% increased damage and stuns the enemy for 1.5 seconds",

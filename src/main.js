@@ -105,8 +105,21 @@ const state = {
   classMenu: {
     bg: null,
     description: null,
+    descriptionShadow: null,
     current: null,
+    currentShadow: null,
     rolls: null,
+    rollsShadow: null,
+  },
+  customMenu: {
+    bg: null,
+    currentBox: null,
+    currentLabel: null,
+    leftBox: null,
+    leftLabel: null,
+    rightBox: null,
+    rightLabel: null,
+    currentIndex: 0,
   },
 };
 
@@ -124,6 +137,22 @@ const classMenuMasks = {
   rolls: { data: null, width: 0, height: 0 },
   spin: { data: null, width: 0, height: 0 },
 };
+const customMenuMasks = {
+  back: { data: null, width: 0, height: 0 },
+  current: { data: null, width: 0, height: 0 },
+  left: { data: null, width: 0, height: 0 },
+  right: { data: null, width: 0, height: 0 },
+  scrollLeft: { data: null, width: 0, height: 0 },
+  scrollRight: { data: null, width: 0, height: 0 },
+};
+
+const AVATARS = [
+  { id: "warrior", color: [148, 94, 72] },
+  { id: "tank", color: [104, 130, 100] },
+  { id: "mage", color: [92, 122, 170] },
+  { id: "assassin", color: [120, 96, 132] },
+  { id: "musketeer", color: [163, 132, 88] },
+];
 
 const hud = {
   status: null,
@@ -238,6 +267,40 @@ function maskCenterWorld(mask, basePos, scaleFactor) {
     x: basePos.x - halfW + cx * scaleFactor,
     y: basePos.y - halfH + cy * scaleFactor,
   };
+}
+
+function maskSizeWorld(mask, scaleFactor) {
+  const bounds = maskBounds(mask);
+  if (!bounds) {
+    return {
+      width: mask.width * scaleFactor,
+      height: mask.height * scaleFactor,
+    };
+  }
+  return {
+    width: Math.max(8, (bounds.maxX - bounds.minX) * scaleFactor),
+    height: Math.max(8, (bounds.maxY - bounds.minY) * scaleFactor),
+  };
+}
+
+function avatarAt(index) {
+  const len = AVATARS.length;
+  const normalized = ((index % len) + len) % len;
+  return AVATARS[normalized];
+}
+
+function updateCustomMenuPreviews() {
+  const custom = state.customMenu;
+  const current = avatarAt(custom.currentIndex);
+  const left = avatarAt(custom.currentIndex - 1);
+  const right = avatarAt(custom.currentIndex + 1);
+
+  if (custom.currentBox) custom.currentBox.color = k.rgb(...current.color);
+  if (custom.currentLabel) custom.currentLabel.text = `Current Avatar\n${current.id}`;
+  if (custom.leftBox) custom.leftBox.color = k.rgb(...left.color);
+  if (custom.leftLabel) custom.leftLabel.text = left.id;
+  if (custom.rightBox) custom.rightBox.color = k.rgb(...right.color);
+  if (custom.rightLabel) custom.rightLabel.text = right.id;
 }
 
 function spinClass() {
@@ -476,7 +539,7 @@ function setupMenu() {
       return;
     }
     if (isInsideMask(buttonMasks.custom, mouse, base.pos, scaleFactor)) {
-      showScreen("Press Esc to return");
+      showCustomMenu();
     }
   });
 }
@@ -493,9 +556,19 @@ function setupClassMenu() {
     const descPos = maskCenterWorld(classMenuMasks.description, base.pos, baseScale);
     const currentPos = maskCenterWorld(classMenuMasks.current, base.pos, baseScale);
     const rollsPos = maskCenterWorld(classMenuMasks.rolls, base.pos, baseScale);
+    const thickOffset = 1;
 
+    if (state.classMenu.descriptionShadow) {
+      state.classMenu.descriptionShadow.pos = vec2(descPos.x + thickOffset, descPos.y);
+    }
     if (state.classMenu.description) state.classMenu.description.pos = vec2(descPos.x, descPos.y);
+    if (state.classMenu.currentShadow) {
+      state.classMenu.currentShadow.pos = vec2(currentPos.x + thickOffset, currentPos.y);
+    }
     if (state.classMenu.current) state.classMenu.current.pos = vec2(currentPos.x, currentPos.y);
+    if (state.classMenu.rollsShadow) {
+      state.classMenu.rollsShadow.pos = vec2(rollsPos.x + thickOffset, rollsPos.y);
+    }
     if (state.classMenu.rolls) state.classMenu.rolls.pos = vec2(rollsPos.x, rollsPos.y);
   });
 
@@ -518,6 +591,51 @@ function setupClassMenu() {
   });
 }
 
+function setupCustomMenu() {
+  onUpdate(() => {
+    if (state.mode !== "custom_menu") return;
+    const base = state.customMenu.bg;
+    if (!base) return;
+
+    const baseScale = getUiScale() * (menuRef.width / base.width);
+    base.scale = vec2(baseScale);
+
+    const currentPos = maskCenterWorld(customMenuMasks.current, base.pos, baseScale);
+    const leftPos = maskCenterWorld(customMenuMasks.left, base.pos, baseScale);
+    const rightPos = maskCenterWorld(customMenuMasks.right, base.pos, baseScale);
+
+    if (state.customMenu.currentBox) state.customMenu.currentBox.pos = vec2(currentPos.x, currentPos.y);
+    if (state.customMenu.currentLabel) state.customMenu.currentLabel.pos = vec2(currentPos.x, currentPos.y);
+    if (state.customMenu.leftBox) state.customMenu.leftBox.pos = vec2(leftPos.x, leftPos.y);
+    if (state.customMenu.leftLabel) state.customMenu.leftLabel.pos = vec2(leftPos.x, leftPos.y);
+    if (state.customMenu.rightBox) state.customMenu.rightBox.pos = vec2(rightPos.x, rightPos.y);
+    if (state.customMenu.rightLabel) state.customMenu.rightLabel.pos = vec2(rightPos.x, rightPos.y);
+  });
+
+  onMousePress("left", () => {
+    if (state.mode !== "custom_menu") return;
+    const base = state.customMenu.bg;
+    if (!base) return;
+    const mouse = getMouseWorld();
+    if (!mouse) return;
+    const scaleFactor = base.scale?.x ?? 1;
+
+    if (isInsideMask(customMenuMasks.back, mouse, base.pos, scaleFactor)) {
+      showMenu();
+      return;
+    }
+    if (isInsideMask(customMenuMasks.scrollLeft, mouse, base.pos, scaleFactor)) {
+      state.customMenu.currentIndex -= 1;
+      updateCustomMenuPreviews();
+      return;
+    }
+    if (isInsideMask(customMenuMasks.scrollRight, mouse, base.pos, scaleFactor)) {
+      state.customMenu.currentIndex += 1;
+      updateCustomMenuPreviews();
+    }
+  });
+}
+
 function showMenu() {
   state.mode = "menu";
   if (state.screen.bg) {
@@ -536,13 +654,53 @@ function showMenu() {
     destroy(state.classMenu.description);
     state.classMenu.description = null;
   }
+  if (state.classMenu.descriptionShadow) {
+    destroy(state.classMenu.descriptionShadow);
+    state.classMenu.descriptionShadow = null;
+  }
   if (state.classMenu.current) {
     destroy(state.classMenu.current);
     state.classMenu.current = null;
   }
+  if (state.classMenu.currentShadow) {
+    destroy(state.classMenu.currentShadow);
+    state.classMenu.currentShadow = null;
+  }
   if (state.classMenu.rolls) {
     destroy(state.classMenu.rolls);
     state.classMenu.rolls = null;
+  }
+  if (state.classMenu.rollsShadow) {
+    destroy(state.classMenu.rollsShadow);
+    state.classMenu.rollsShadow = null;
+  }
+  if (state.customMenu.bg) {
+    destroy(state.customMenu.bg);
+    state.customMenu.bg = null;
+  }
+  if (state.customMenu.currentBox) {
+    destroy(state.customMenu.currentBox);
+    state.customMenu.currentBox = null;
+  }
+  if (state.customMenu.currentLabel) {
+    destroy(state.customMenu.currentLabel);
+    state.customMenu.currentLabel = null;
+  }
+  if (state.customMenu.leftBox) {
+    destroy(state.customMenu.leftBox);
+    state.customMenu.leftBox = null;
+  }
+  if (state.customMenu.leftLabel) {
+    destroy(state.customMenu.leftLabel);
+    state.customMenu.leftLabel = null;
+  }
+  if (state.customMenu.rightBox) {
+    destroy(state.customMenu.rightBox);
+    state.customMenu.rightBox = null;
+  }
+  if (state.customMenu.rightLabel) {
+    destroy(state.customMenu.rightLabel);
+    state.customMenu.rightLabel = null;
   }
   if (state.menu.base) state.menu.base.hidden = false;
   if (state.menu.hover) state.menu.hover.hidden = true;
@@ -578,11 +736,20 @@ function updateClassMenuText() {
   if (state.classMenu.current) {
     state.classMenu.current.text = `Current Class:\n${data.name}`;
   }
+  if (state.classMenu.currentShadow) {
+    state.classMenu.currentShadow.text = `Current Class:\n${data.name}`;
+  }
   if (state.classMenu.description) {
     state.classMenu.description.text = `Perks:\n${perks}\n\nAbility:\n${ability}\n\nCooldown: ${cooldown}`;
   }
+  if (state.classMenu.descriptionShadow) {
+    state.classMenu.descriptionShadow.text = `Perks:\n${perks}\n\nAbility:\n${ability}\n\nCooldown: ${cooldown}`;
+  }
   if (state.classMenu.rolls) {
-    state.classMenu.rolls.text = "Class Rolls:\nInfinite";
+    state.classMenu.rolls.text = "Class Rolls: \u221e";
+  }
+  if (state.classMenu.rollsShadow) {
+    state.classMenu.rollsShadow.text = "Class Rolls: \u221e";
   }
 }
 
@@ -593,8 +760,11 @@ function showClassMenu() {
 
   if (state.classMenu.bg) destroy(state.classMenu.bg);
   if (state.classMenu.description) destroy(state.classMenu.description);
+  if (state.classMenu.descriptionShadow) destroy(state.classMenu.descriptionShadow);
   if (state.classMenu.current) destroy(state.classMenu.current);
+  if (state.classMenu.currentShadow) destroy(state.classMenu.currentShadow);
   if (state.classMenu.rolls) destroy(state.classMenu.rolls);
+  if (state.classMenu.rollsShadow) destroy(state.classMenu.rollsShadow);
 
   state.classMenu.bg = add([
     sprite("classMenu"),
@@ -615,15 +785,34 @@ function showClassMenu() {
     ? Math.max(200, (descBounds.maxX - descBounds.minX) * baseScale * 0.85)
     : 520;
 
+  const thickOffset = 1;
+  state.classMenu.descriptionShadow = add([
+    text("", { size: 22, width: descWidth }),
+    pos(descPos.x + thickOffset, descPos.y),
+    anchor("center"),
+    color(0, 0, 0),
+  ]);
   state.classMenu.description = add([
-    text("", { size: 24, width: descWidth }),
+    text("", { size: 22, width: descWidth }),
     pos(descPos.x, descPos.y),
     anchor("center"),
     color(0, 0, 0),
   ]);
+  state.classMenu.currentShadow = add([
+    text("", { size: 26 }),
+    pos(currentPos.x + thickOffset, currentPos.y),
+    anchor("center"),
+    color(0, 0, 0),
+  ]);
   state.classMenu.current = add([
-    text("", { size: 24 }),
+    text("", { size: 26 }),
     pos(currentPos.x, currentPos.y),
+    anchor("center"),
+    color(0, 0, 0),
+  ]);
+  state.classMenu.rollsShadow = add([
+    text("", { size: 22 }),
+    pos(rollsPos.x + thickOffset, rollsPos.y),
     anchor("center"),
     color(0, 0, 0),
   ]);
@@ -635,6 +824,79 @@ function showClassMenu() {
   ]);
 
   updateClassMenuText();
+}
+
+function showCustomMenu() {
+  state.mode = "custom_menu";
+  if (state.menu.base) state.menu.base.hidden = true;
+  if (state.menu.hover) state.menu.hover.hidden = true;
+
+  if (state.customMenu.bg) destroy(state.customMenu.bg);
+  if (state.customMenu.currentBox) destroy(state.customMenu.currentBox);
+  if (state.customMenu.currentLabel) destroy(state.customMenu.currentLabel);
+  if (state.customMenu.leftBox) destroy(state.customMenu.leftBox);
+  if (state.customMenu.leftLabel) destroy(state.customMenu.leftLabel);
+  if (state.customMenu.rightBox) destroy(state.customMenu.rightBox);
+  if (state.customMenu.rightLabel) destroy(state.customMenu.rightLabel);
+
+  state.customMenu.bg = add([
+    sprite("customMenu"),
+    pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
+    anchor("center"),
+    scale(1),
+  ]);
+
+  const base = state.customMenu.bg;
+  const baseScale = getUiScale() * (menuRef.width / base.width);
+  base.scale = vec2(baseScale);
+
+  const currentPos = maskCenterWorld(customMenuMasks.current, base.pos, baseScale);
+  const leftPos = maskCenterWorld(customMenuMasks.left, base.pos, baseScale);
+  const rightPos = maskCenterWorld(customMenuMasks.right, base.pos, baseScale);
+  const currentSize = maskSizeWorld(customMenuMasks.current, baseScale);
+  const leftSize = maskSizeWorld(customMenuMasks.left, baseScale);
+  const rightSize = maskSizeWorld(customMenuMasks.right, baseScale);
+
+  state.customMenu.currentBox = add([
+    rect(currentSize.width * 0.8, currentSize.height * 0.8),
+    pos(currentPos.x, currentPos.y),
+    anchor("center"),
+    color(120, 120, 120),
+  ]);
+  state.customMenu.currentLabel = add([
+    text("", { size: 20, width: currentSize.width * 0.75 }),
+    pos(currentPos.x, currentPos.y),
+    anchor("center"),
+    color(0, 0, 0),
+  ]);
+
+  state.customMenu.leftBox = add([
+    rect(leftSize.width * 0.8, leftSize.height * 0.8),
+    pos(leftPos.x, leftPos.y),
+    anchor("center"),
+    color(120, 120, 120),
+  ]);
+  state.customMenu.leftLabel = add([
+    text("", { size: 18, width: leftSize.width * 0.75 }),
+    pos(leftPos.x, leftPos.y),
+    anchor("center"),
+    color(0, 0, 0),
+  ]);
+
+  state.customMenu.rightBox = add([
+    rect(rightSize.width * 0.8, rightSize.height * 0.8),
+    pos(rightPos.x, rightPos.y),
+    anchor("center"),
+    color(120, 120, 120),
+  ]);
+  state.customMenu.rightLabel = add([
+    text("", { size: 18, width: rightSize.width * 0.75 }),
+    pos(rightPos.x, rightPos.y),
+    anchor("center"),
+    color(0, 0, 0),
+  ]);
+
+  updateCustomMenuPreviews();
 }
 
 function startGame() {
@@ -653,6 +915,7 @@ async function main() {
     loadSprite("menu", "./data/Menu/Menu.png"),
     loadSprite("menuHover", "./data/Menu/Hovered%20menu.png"),
     loadSprite("classMenu", "./data/Class%20Menu/Class%20Menu.png"),
+    loadSprite("customMenu", "./data/Custom%20Menu/Custom%20Menu.png"),
   ]);
   Object.assign(menuMask, await loadMask("./data/Menu/Menu%20area.png"));
   menuRef.width = menuMask.width || menuRef.width;
@@ -666,6 +929,12 @@ async function main() {
   Object.assign(classMenuMasks.current, await loadMask("./data/Class%20Menu/Current%20Class%20-%20Class%20Menu.png"));
   Object.assign(classMenuMasks.rolls, await loadMask("./data/Class%20Menu/Class%20Rolls%20-%20Class%20Menu.png"));
   Object.assign(classMenuMasks.spin, await loadMask("./data/Class%20Menu/Spin%20Button%20-%20Class%20Menu.png"));
+  Object.assign(customMenuMasks.back, await loadMask("./data/Custom%20Menu/Back%20Button%20-%20Custom%20Menu.png"));
+  Object.assign(customMenuMasks.current, await loadMask("./data/Custom%20Menu/Current%20Avatar%20-%20Custom%20Menu.png"));
+  Object.assign(customMenuMasks.left, await loadMask("./data/Custom%20Menu/Left%20Avatar%20-%20Custom%20Menu.png"));
+  Object.assign(customMenuMasks.right, await loadMask("./data/Custom%20Menu/Right%20Avatar%20-%20Custom%20Menu.png"));
+  Object.assign(customMenuMasks.scrollLeft, await loadMask("./data/Custom%20Menu/Scroll%20Left%20Button%20-%20Custom%20Menu.png"));
+  Object.assign(customMenuMasks.scrollRight, await loadMask("./data/Custom%20Menu/Scroll%20Right%20Button%20-%20Custom%20Menu.png"));
 
   DATA.classes = await loadJson("./data/classes.json");
   DATA.items = await loadJson("./data/items.json");
@@ -676,6 +945,7 @@ async function main() {
   setupInput();
   setupMenu();
   setupClassMenu();
+  setupCustomMenu();
 }
 
 main().catch((err) => {

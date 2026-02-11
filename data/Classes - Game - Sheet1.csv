@@ -1,23 +1,23 @@
 Class name,Perks,Ability,Cooldown,Rarity
 None,N/A,N/A,N/A,30%
-Warrior,"10 physical damage
-10 speed
-10 hp","Double blade: 
+Warrior,"+10 physical damage
++10 speed
++10 hp","Double blade: 
 Can attack 30% faster for 5 seconds and cool down is 25% faster for all abilities",25 seconds,20%
-Tank,"30 hp
-10 physical damage
+Tank,"+30 hp
++10 physical damage
 -10 speed","Strong hand: 
 Gives a 100 hp sheild to the character and buffs the physical damage by 100% for the next basic attack",25 seconds,15%
-Mage,"40 magic damage
+Mage,"+40 magic damage
 -5 speed
 -5 health
 -5 physical damage","Fireball:
 Your next attack shoots a fireball, dealing 150% extra damage",15 seconds,15%
-Assassin ,"20 speed
-20 physical damage
+Assassin ,"+20 speed
++20 physical damage
 -10 hp","Smoke bomb: 
 Goes invisble for 5 seconds and heals 10% of max health every second while invisble",30 seconds,10%
-Musketeer ,"15 speed
-30 physical damage
+Musketeer ,"+15 speed
++30 physical damage
 -10 hp","Triple shot: 
 Shoots 3 bullets that deal 5% increased damage and stuns the enemy for 1.5 seconds",20 seconds,10%
