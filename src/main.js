@@ -2,6 +2,8 @@ import kaplay from "https://unpkg.com/kaplay@3001.0.19/dist/kaplay.mjs";
 
 const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1920;
+const UI_SCALE = 0.9;
+const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 
 const mouseScreen = { x: 0, y: 0 };
@@ -27,6 +29,14 @@ function fitCanvasToViewport() {
   canvas.style.height = `${Math.floor(GAME_HEIGHT * scale)}px`;
 }
 
+function getUiScale() {
+  const baseScale = Math.min(
+    canvas.clientWidth / GAME_WIDTH,
+    canvas.clientHeight / GAME_HEIGHT,
+  ) || 1;
+  return baseScale * UI_SCALE;
+}
+
 function scheduleFit() {
   fitCanvasToViewport();
   requestAnimationFrame(fitCanvasToViewport);
@@ -42,6 +52,7 @@ const k = kaplay({
   height: GAME_HEIGHT,
   canvas,
   background: [20, 18, 24],
+  debug: false,
 });
 
 const {
@@ -53,9 +64,9 @@ const {
   area,
   text,
   onUpdate,
+  onMousePress,
   onKeyPress,
   isKeyDown,
-  mousePos,
   anchor,
   scale,
   loadSprite,
@@ -87,12 +98,31 @@ const state = {
     base: null,
     hover: null,
   },
+  screen: {
+    bg: null,
+    label: null,
+  },
+  classMenu: {
+    bg: null,
+    description: null,
+    current: null,
+    rolls: null,
+  },
 };
 
-const menuMask = {
-  data: null,
-  width: 0,
-  height: 0,
+const menuMask = { data: null, width: 0, height: 0 };
+const hoverMask = { data: null, width: 0, height: 0 };
+const buttonMasks = {
+  play: { data: null, width: 0, height: 0 },
+  custom: { data: null, width: 0, height: 0 },
+  class: { data: null, width: 0, height: 0 },
+};
+const classMenuMasks = {
+  back: { data: null, width: 0, height: 0 },
+  description: { data: null, width: 0, height: 0 },
+  current: { data: null, width: 0, height: 0 },
+  rolls: { data: null, width: 0, height: 0 },
+  spin: { data: null, width: 0, height: 0 },
 };
 
 const hud = {
@@ -148,19 +178,79 @@ async function loadMask(path) {
   const ctx = off.getContext("2d");
   ctx.drawImage(bitmap, 0, 0);
   const img = ctx.getImageData(0, 0, off.width, off.height);
-  menuMask.data = img.data;
-  menuMask.width = off.width;
-  menuMask.height = off.height;
+  return {
+    data: img.data,
+    width: off.width,
+    height: off.height,
+  };
 }
 
-function isBrownPixel(r, g, b, a) {
-  if (a < 10) return false;
-  const isDark = r < 140 && g < 120 && b < 90;
-  const isBrownish = r > g && g > b;
-  return isDark && isBrownish;
+function isInsideMask(mask, mouse, basePos, scaleFactor) {
+  if (!mask?.data || !mouse) return false;
+  const halfW = (mask.width * scaleFactor) / 2;
+  const halfH = (mask.height * scaleFactor) / 2;
+  const localX = mouse.x - basePos.x + halfW;
+  const localY = mouse.y - basePos.y + halfH;
+  if (
+    localX < 0 ||
+    localY < 0 ||
+    localX >= mask.width * scaleFactor ||
+    localY >= mask.height * scaleFactor
+  ) {
+    return false;
+  }
+  const imgX = Math.floor(localX / scaleFactor);
+  const imgY = Math.floor(localY / scaleFactor);
+  const idx = (imgY * mask.width + imgX) * 4;
+  const a = mask.data[idx + 3];
+  return a > 10;
+}
+
+function maskBounds(mask) {
+  if (!mask?.data) return null;
+  let minX = mask.width;
+  let minY = mask.height;
+  let maxX = 0;
+  let maxY = 0;
+  for (let y = 0; y < mask.height; y++) {
+    for (let x = 0; x < mask.width; x++) {
+      const idx = (y * mask.width + x) * 4 + 3;
+      if (mask.data[idx] > 10) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (minX > maxX || minY > maxY) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function maskCenterWorld(mask, basePos, scaleFactor) {
+  const bounds = maskBounds(mask);
+  if (!bounds) return { x: basePos.x, y: basePos.y };
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cy = (bounds.minY + bounds.maxY) / 2;
+  const halfW = (mask.width * scaleFactor) / 2;
+  const halfH = (mask.height * scaleFactor) / 2;
+  return {
+    x: basePos.x - halfW + cx * scaleFactor,
+    y: basePos.y - halfH + cy * scaleFactor,
+  };
 }
 
 function spinClass() {
+  if (!state.player) {
+    state.player = {
+      classId: "none",
+      lastHit: 0,
+      hp: 0,
+      attack: 0,
+      speed: 0,
+      magicDamage: 0,
+    };
+  }
   const spinTable = DATA.classes.spin_table;
   const classId = weightedChoice(spinTable.map((e) => [e.class_id, e.weight]));
   state.player.classId = classId;
@@ -299,6 +389,10 @@ function setupInput() {
     }
     startDungeon("dungeon_1");
   });
+  onKeyPress("escape", () => {
+    if (state.mode === "menu") return;
+    showMenu();
+  });
 }
 
 function setupMovement() {
@@ -347,10 +441,7 @@ function setupMenu() {
     if (state.mode !== "menu") return;
     if (!base || !hover) return;
 
-    const baseScale = (Math.min(
-      canvas.clientWidth / base.width,
-      canvas.clientHeight / base.height,
-    ) || 1) * 0.95;
+    const baseScale = getUiScale() * (menuRef.width / base.width);
     base.scale = vec2(baseScale);
     hover.scale = vec2(baseScale);
 
@@ -361,46 +452,195 @@ function setupMenu() {
       return;
     }
     const scaleFactor = base.scale?.x ?? 1;
-    const halfW = (menuMask.width * scaleFactor) / 2;
-    const halfH = (menuMask.height * scaleFactor) / 2;
-    const localX = mouse.x - base.pos.x + halfW;
-    const localY = mouse.y - base.pos.y + halfH;
+    const shouldHover = hover.hidden
+      ? isInsideMask(menuMask, mouse, base.pos, scaleFactor)
+      : isInsideMask(hoverMask, mouse, base.pos, scaleFactor);
 
-    let isHover = false;
-    if (
-      menuMask.data &&
-      localX >= 0 &&
-      localY >= 0 &&
-      localX < menuMask.width * scaleFactor &&
-      localY < menuMask.height * scaleFactor
-    ) {
-      const imgX = Math.floor(localX / scaleFactor);
-      const imgY = Math.floor(localY / scaleFactor);
-      const idx = (imgY * menuMask.width + imgX) * 4;
-      const r = menuMask.data[idx];
-      const g = menuMask.data[idx + 1];
-      const b = menuMask.data[idx + 2];
-      const a = menuMask.data[idx + 3];
-      isHover = isBrownPixel(r, g, b, a);
+    base.hidden = shouldHover;
+    hover.hidden = !shouldHover;
+    hover.scale = vec2(base.scale.x);
+  });
+
+  onMousePress("left", () => {
+    if (state.mode !== "menu") return;
+    const mouse = getMouseWorld();
+    if (!mouse) return;
+    const scaleFactor = base.scale?.x ?? 1;
+
+    if (isInsideMask(buttonMasks.play, mouse, base.pos, scaleFactor)) {
+      showScreen("Press Esc to return");
+      return;
     }
-
-    base.hidden = isHover;
-    hover.hidden = !isHover;
-    if (isHover) {
-      // keep exact size match with base
-      hover.scale = vec2(base.scale.x);
-    } else {
-      hover.scale = vec2(base.scale.x);
+    if (isInsideMask(buttonMasks.class, mouse, base.pos, scaleFactor)) {
+      showClassMenu();
+      return;
+    }
+    if (isInsideMask(buttonMasks.custom, mouse, base.pos, scaleFactor)) {
+      showScreen("Press Esc to return");
     }
   });
 }
 
+function setupClassMenu() {
+  onUpdate(() => {
+    if (state.mode !== "class_menu") return;
+    const base = state.classMenu.bg;
+    if (!base) return;
+
+    const baseScale = getUiScale() * (menuRef.width / base.width);
+    base.scale = vec2(baseScale);
+
+    const descPos = maskCenterWorld(classMenuMasks.description, base.pos, baseScale);
+    const currentPos = maskCenterWorld(classMenuMasks.current, base.pos, baseScale);
+    const rollsPos = maskCenterWorld(classMenuMasks.rolls, base.pos, baseScale);
+
+    if (state.classMenu.description) state.classMenu.description.pos = vec2(descPos.x, descPos.y);
+    if (state.classMenu.current) state.classMenu.current.pos = vec2(currentPos.x, currentPos.y);
+    if (state.classMenu.rolls) state.classMenu.rolls.pos = vec2(rollsPos.x, rollsPos.y);
+  });
+
+  onMousePress("left", () => {
+    if (state.mode !== "class_menu") return;
+    const base = state.classMenu.bg;
+    if (!base) return;
+    const mouse = getMouseWorld();
+    if (!mouse) return;
+    const scaleFactor = base.scale?.x ?? 1;
+
+    if (isInsideMask(classMenuMasks.back, mouse, base.pos, scaleFactor)) {
+      showMenu();
+      return;
+    }
+    if (isInsideMask(classMenuMasks.spin, mouse, base.pos, scaleFactor)) {
+      spinClass();
+      updateClassMenuText();
+    }
+  });
+}
+
+function showMenu() {
+  state.mode = "menu";
+  if (state.screen.bg) {
+    destroy(state.screen.bg);
+    state.screen.bg = null;
+  }
+  if (state.screen.label) {
+    destroy(state.screen.label);
+    state.screen.label = null;
+  }
+  if (state.classMenu.bg) {
+    destroy(state.classMenu.bg);
+    state.classMenu.bg = null;
+  }
+  if (state.classMenu.description) {
+    destroy(state.classMenu.description);
+    state.classMenu.description = null;
+  }
+  if (state.classMenu.current) {
+    destroy(state.classMenu.current);
+    state.classMenu.current = null;
+  }
+  if (state.classMenu.rolls) {
+    destroy(state.classMenu.rolls);
+    state.classMenu.rolls = null;
+  }
+  if (state.menu.base) state.menu.base.hidden = false;
+  if (state.menu.hover) state.menu.hover.hidden = true;
+}
+
+function showScreen(title) {
+  state.mode = "screen";
+  if (state.menu.base) state.menu.base.hidden = true;
+  if (state.menu.hover) state.menu.hover.hidden = true;
+  if (state.screen.bg) destroy(state.screen.bg);
+  if (state.screen.label) destroy(state.screen.label);
+  state.screen.bg = add([
+    rect(GAME_WIDTH, GAME_HEIGHT),
+    pos(0, 0),
+    color(0, 0, 0),
+  ]);
+  state.screen.label = add([
+    text(title, { size: 24 }),
+    pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
+    anchor("center"),
+    color(230, 230, 230),
+  ]);
+}
+
+function updateClassMenuText() {
+  const classId = state.player?.classId || "none";
+  const data = DATA.classes.classes[classId] ?? DATA.classes.classes.none;
+  const perks = data.perks?.length ? data.perks.join("\n") : "None";
+  const ability = data.ability || "None";
+  const cooldown =
+    data.cooldown_seconds == null ? "None" : `${data.cooldown_seconds}s`;
+
+  if (state.classMenu.current) {
+    state.classMenu.current.text = `Current Class:\n${data.name}`;
+  }
+  if (state.classMenu.description) {
+    state.classMenu.description.text = `Perks:\n${perks}\n\nAbility:\n${ability}\n\nCooldown: ${cooldown}`;
+  }
+  if (state.classMenu.rolls) {
+    state.classMenu.rolls.text = "Class Rolls:\nInfinite";
+  }
+}
+
+function showClassMenu() {
+  state.mode = "class_menu";
+  if (state.menu.base) state.menu.base.hidden = true;
+  if (state.menu.hover) state.menu.hover.hidden = true;
+
+  if (state.classMenu.bg) destroy(state.classMenu.bg);
+  if (state.classMenu.description) destroy(state.classMenu.description);
+  if (state.classMenu.current) destroy(state.classMenu.current);
+  if (state.classMenu.rolls) destroy(state.classMenu.rolls);
+
+  state.classMenu.bg = add([
+    sprite("classMenu"),
+    pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
+    anchor("center"),
+    scale(1),
+  ]);
+
+  const base = state.classMenu.bg;
+  const baseScale = getUiScale() * (menuRef.width / base.width);
+  base.scale = vec2(baseScale);
+
+  const descPos = maskCenterWorld(classMenuMasks.description, base.pos, baseScale);
+  const currentPos = maskCenterWorld(classMenuMasks.current, base.pos, baseScale);
+  const rollsPos = maskCenterWorld(classMenuMasks.rolls, base.pos, baseScale);
+  const descBounds = maskBounds(classMenuMasks.description);
+  const descWidth = descBounds
+    ? Math.max(200, (descBounds.maxX - descBounds.minX) * baseScale * 0.85)
+    : 520;
+
+  state.classMenu.description = add([
+    text("", { size: 24, width: descWidth }),
+    pos(descPos.x, descPos.y),
+    anchor("center"),
+    color(0, 0, 0),
+  ]);
+  state.classMenu.current = add([
+    text("", { size: 24 }),
+    pos(currentPos.x, currentPos.y),
+    anchor("center"),
+    color(0, 0, 0),
+  ]);
+  state.classMenu.rolls = add([
+    text("", { size: 22 }),
+    pos(rollsPos.x, rollsPos.y),
+    anchor("center"),
+    color(0, 0, 0),
+  ]);
+
+  updateClassMenuText();
+}
+
 function startGame() {
   state.mode = "game";
-  if (state.menu.base) destroy(state.menu.base);
-  if (state.menu.hover) destroy(state.menu.hover);
-  state.menu.base = null;
-  state.menu.hover = null;
+  if (state.menu.base) state.menu.base.hidden = true;
+  if (state.menu.hover) state.menu.hover.hidden = true;
 
   setupPlayer();
   setupHud();
@@ -412,8 +652,20 @@ async function main() {
   await Promise.all([
     loadSprite("menu", "./data/Menu/Menu.png"),
     loadSprite("menuHover", "./data/Menu/Hovered%20menu.png"),
+    loadSprite("classMenu", "./data/Class%20Menu/Class%20Menu.png"),
   ]);
-  await loadMask("./data/Menu/Menu.png");
+  Object.assign(menuMask, await loadMask("./data/Menu/Menu%20area.png"));
+  menuRef.width = menuMask.width || menuRef.width;
+  menuRef.height = menuMask.height || menuRef.height;
+  Object.assign(hoverMask, await loadMask("./data/Menu/Hovered%20menu%20area.png"));
+  Object.assign(buttonMasks.play, await loadMask("./data/Menu/Play%20Button.png"));
+  Object.assign(buttonMasks.custom, await loadMask("./data/Menu/Custom%20button.png"));
+  Object.assign(buttonMasks.class, await loadMask("./data/Menu/Class%20button.png"));
+  Object.assign(classMenuMasks.back, await loadMask("./data/Class%20Menu/Back%20Button%20-%20Class%20Menu.png"));
+  Object.assign(classMenuMasks.description, await loadMask("./data/Class%20Menu/Class%20Description%20-%20Class%20Menu.png"));
+  Object.assign(classMenuMasks.current, await loadMask("./data/Class%20Menu/Current%20Class%20-%20Class%20Menu.png"));
+  Object.assign(classMenuMasks.rolls, await loadMask("./data/Class%20Menu/Class%20Rolls%20-%20Class%20Menu.png"));
+  Object.assign(classMenuMasks.spin, await loadMask("./data/Class%20Menu/Spin%20Button%20-%20Class%20Menu.png"));
 
   DATA.classes = await loadJson("./data/classes.json");
   DATA.items = await loadJson("./data/items.json");
@@ -423,6 +675,7 @@ async function main() {
 
   setupInput();
   setupMenu();
+  setupClassMenu();
 }
 
 main().catch((err) => {
