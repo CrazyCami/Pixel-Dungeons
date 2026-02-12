@@ -134,6 +134,10 @@ const state = {
     movementReady: false,
     playerWorld: null,
   },
+  loading: {
+    overlay: null,
+    label: null,
+  },
 };
 
 const menuMask = { data: null, width: 0, height: 0 };
@@ -161,6 +165,16 @@ const customMenuMasks = {
 const mapMasks = {
   spawn: { data: null, width: 0, height: 0 },
   walk: { data: null, width: 0, height: 0 },
+};
+
+const assetState = {
+  menuReady: false,
+  classMenuReady: false,
+  customMenuReady: false,
+  gameReady: false,
+  classMenuPromise: null,
+  customMenuPromise: null,
+  gamePromise: null,
 };
 
 const AVATARS = [
@@ -380,6 +394,97 @@ function updateCustomMenuPreviews() {
   if (custom.rightLabel) custom.rightLabel.text = right.id;
 }
 
+function showLoading(message) {
+  if (!state.loading.overlay) {
+    state.loading.overlay = add([
+      rect(GAME_WIDTH, GAME_HEIGHT),
+      pos(0, 0),
+      color(0, 0, 0),
+    ]);
+  }
+  if (!state.loading.label) {
+    state.loading.label = add([
+      text("", { size: 24 }),
+      pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
+      anchor("center"),
+      color(230, 230, 230),
+    ]);
+  }
+  state.loading.label.text = message;
+}
+
+function hideLoading() {
+  if (state.loading.label) {
+    destroy(state.loading.label);
+    state.loading.label = null;
+  }
+  if (state.loading.overlay) {
+    destroy(state.loading.overlay);
+    state.loading.overlay = null;
+  }
+}
+
+async function ensureClassMenuAssets() {
+  if (assetState.classMenuReady) return;
+  if (assetState.classMenuPromise) return assetState.classMenuPromise;
+  assetState.classMenuPromise = (async () => {
+    showLoading("Loading Class Menu...");
+    await loadSprite("classMenu", "./data/Class%20Menu/Class%20Menu.png");
+    Object.assign(classMenuMasks.back, await loadMask("./data/Class%20Menu/Back%20Button%20-%20Class%20Menu.png"));
+    Object.assign(classMenuMasks.description, await loadMask("./data/Class%20Menu/Class%20Description%20-%20Class%20Menu.png"));
+    Object.assign(classMenuMasks.current, await loadMask("./data/Class%20Menu/Current%20Class%20-%20Class%20Menu.png"));
+    Object.assign(classMenuMasks.rolls, await loadMask("./data/Class%20Menu/Class%20Rolls%20-%20Class%20Menu.png"));
+    Object.assign(classMenuMasks.spin, await loadMask("./data/Class%20Menu/Spin%20Button%20-%20Class%20Menu.png"));
+    assetState.classMenuReady = true;
+  })();
+  try {
+    await assetState.classMenuPromise;
+  } finally {
+    assetState.classMenuPromise = null;
+    hideLoading();
+  }
+}
+
+async function ensureCustomMenuAssets() {
+  if (assetState.customMenuReady) return;
+  if (assetState.customMenuPromise) return assetState.customMenuPromise;
+  assetState.customMenuPromise = (async () => {
+    showLoading("Loading Custom Menu...");
+    await loadSprite("customMenu", "./data/Custom%20Menu/Custom%20Menu.png");
+    Object.assign(customMenuMasks.back, await loadMask("./data/Custom%20Menu/Back%20Button%20-%20Custom%20Menu.png"));
+    Object.assign(customMenuMasks.current, await loadMask("./data/Custom%20Menu/Current%20Avatar%20-%20Custom%20Menu.png"));
+    Object.assign(customMenuMasks.left, await loadMask("./data/Custom%20Menu/Left%20Avatar%20-%20Custom%20Menu.png"));
+    Object.assign(customMenuMasks.right, await loadMask("./data/Custom%20Menu/Right%20Avatar%20-%20Custom%20Menu.png"));
+    Object.assign(customMenuMasks.scrollLeft, await loadMask("./data/Custom%20Menu/Scroll%20Left%20Button%20-%20Custom%20Menu.png"));
+    Object.assign(customMenuMasks.scrollRight, await loadMask("./data/Custom%20Menu/Scroll%20Right%20Button%20-%20Custom%20Menu.png"));
+    assetState.customMenuReady = true;
+  })();
+  try {
+    await assetState.customMenuPromise;
+  } finally {
+    assetState.customMenuPromise = null;
+    hideLoading();
+  }
+}
+
+async function ensureGameAssets() {
+  if (assetState.gameReady) return;
+  if (assetState.gamePromise) return assetState.gamePromise;
+  assetState.gamePromise = (async () => {
+    showLoading("Loading Map...");
+    await loadSprite("map", "./data/Map/Map.png");
+    Object.assign(mapMasks.spawn, await loadMask("./data/Map/Map%20-%20Spawn%20Area.png"));
+    Object.assign(mapMasks.walk, await loadMask("./data/Map/Map%20-%20Walk%20Section.png"));
+    assetState.gameReady = true;
+  })();
+  try {
+    await assetState.gamePromise;
+  } finally {
+    assetState.gamePromise = null;
+    hideLoading();
+  }
+}
+
 function spinClass() {
   if (!state.player) {
     state.player = {
@@ -529,7 +634,7 @@ function setupInput() {
   });
   onKeyPress("enter", () => {
     if (state.mode === "menu") {
-      startGame();
+      startGame().catch((err) => console.error(err));
       return;
     }
     if (state.mode !== "game") return;
@@ -622,15 +727,15 @@ function setupMenu() {
     const scaleFactor = base.scale?.x ?? 1;
 
     if (isInsideMask(buttonMasks.play, mouse, base.pos, scaleFactor)) {
-      startGame();
+      startGame().catch((err) => console.error(err));
       return;
     }
     if (isInsideMask(buttonMasks.class, mouse, base.pos, scaleFactor)) {
-      showClassMenu();
+      openClassMenu().catch((err) => console.error(err));
       return;
     }
     if (isInsideMask(buttonMasks.custom, mouse, base.pos, scaleFactor)) {
-      showCustomMenu();
+      openCustomMenu().catch((err) => console.error(err));
     }
   });
 }
@@ -866,6 +971,11 @@ function updateClassMenuText() {
   }
 }
 
+async function openClassMenu() {
+  await ensureClassMenuAssets();
+  showClassMenu();
+}
+
 function showClassMenu() {
   state.mode = "class_menu";
   if (state.menu.base) state.menu.base.hidden = true;
@@ -1012,7 +1122,13 @@ function showCustomMenu() {
   updateCustomMenuPreviews();
 }
 
-function startGame() {
+async function openCustomMenu() {
+  await ensureCustomMenuAssets();
+  showCustomMenu();
+}
+
+async function startGame() {
+  await ensureGameAssets();
   state.mode = "game";
   if (state.menu.base) state.menu.base.hidden = true;
   if (state.menu.hover) state.menu.hover.hidden = true;
@@ -1051,9 +1167,6 @@ async function main() {
   await Promise.all([
     loadSprite("menu", "./data/Menu/Menu.png"),
     loadSprite("menuHover", "./data/Menu/Hovered%20menu.png"),
-    loadSprite("classMenu", "./data/Class%20Menu/Class%20Menu.png"),
-    loadSprite("customMenu", "./data/Custom%20Menu/Custom%20Menu.png"),
-    loadSprite("map", "./data/Map/Map.png"),
   ]);
   Object.assign(menuMask, await loadMask("./data/Menu/Menu%20area.png"));
   menuRef.width = menuMask.width || menuRef.width;
@@ -1062,19 +1175,7 @@ async function main() {
   Object.assign(buttonMasks.play, await loadMask("./data/Menu/Play%20Button.png"));
   Object.assign(buttonMasks.custom, await loadMask("./data/Menu/Custom%20button.png"));
   Object.assign(buttonMasks.class, await loadMask("./data/Menu/Class%20button.png"));
-  Object.assign(classMenuMasks.back, await loadMask("./data/Class%20Menu/Back%20Button%20-%20Class%20Menu.png"));
-  Object.assign(classMenuMasks.description, await loadMask("./data/Class%20Menu/Class%20Description%20-%20Class%20Menu.png"));
-  Object.assign(classMenuMasks.current, await loadMask("./data/Class%20Menu/Current%20Class%20-%20Class%20Menu.png"));
-  Object.assign(classMenuMasks.rolls, await loadMask("./data/Class%20Menu/Class%20Rolls%20-%20Class%20Menu.png"));
-  Object.assign(classMenuMasks.spin, await loadMask("./data/Class%20Menu/Spin%20Button%20-%20Class%20Menu.png"));
-  Object.assign(customMenuMasks.back, await loadMask("./data/Custom%20Menu/Back%20Button%20-%20Custom%20Menu.png"));
-  Object.assign(customMenuMasks.current, await loadMask("./data/Custom%20Menu/Current%20Avatar%20-%20Custom%20Menu.png"));
-  Object.assign(customMenuMasks.left, await loadMask("./data/Custom%20Menu/Left%20Avatar%20-%20Custom%20Menu.png"));
-  Object.assign(customMenuMasks.right, await loadMask("./data/Custom%20Menu/Right%20Avatar%20-%20Custom%20Menu.png"));
-  Object.assign(customMenuMasks.scrollLeft, await loadMask("./data/Custom%20Menu/Scroll%20Left%20Button%20-%20Custom%20Menu.png"));
-  Object.assign(customMenuMasks.scrollRight, await loadMask("./data/Custom%20Menu/Scroll%20Right%20Button%20-%20Custom%20Menu.png"));
-  Object.assign(mapMasks.spawn, await loadMask("./data/Map/Map%20-%20Spawn%20Area.png"));
-  Object.assign(mapMasks.walk, await loadMask("./data/Map/Map%20-%20Walk%20Section.png"));
+  assetState.menuReady = true;
 
   DATA.classes = await loadJson("./data/classes.json");
   DATA.items = await loadJson("./data/items.json");
