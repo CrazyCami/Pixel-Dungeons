@@ -3,6 +3,7 @@ import kaplay from "https://unpkg.com/kaplay@3001.0.19/dist/kaplay.mjs";
 const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1920;
 const UI_SCALE = 0.9;
+const MAP_ZOOM = 5;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 
@@ -35,6 +36,13 @@ function getUiScale() {
     canvas.clientHeight / GAME_HEIGHT,
   ) || 1;
   return baseScale * UI_SCALE;
+}
+
+function safeSpriteScale(obj) {
+  if (!obj || !obj.width || !Number.isFinite(obj.width) || obj.width <= 0) {
+    return getUiScale();
+  }
+  return getUiScale() * (menuRef.width / obj.width);
 }
 
 function scheduleFit() {
@@ -121,6 +129,11 @@ const state = {
     rightLabel: null,
     currentIndex: 0,
   },
+  game: {
+    mapBg: null,
+    movementReady: false,
+    playerWorld: null,
+  },
 };
 
 const menuMask = { data: null, width: 0, height: 0 };
@@ -144,6 +157,10 @@ const customMenuMasks = {
   right: { data: null, width: 0, height: 0 },
   scrollLeft: { data: null, width: 0, height: 0 },
   scrollRight: { data: null, width: 0, height: 0 },
+};
+const mapMasks = {
+  spawn: { data: null, width: 0, height: 0 },
+  walk: { data: null, width: 0, height: 0 },
 };
 
 const AVATARS = [
@@ -269,6 +286,17 @@ function maskCenterWorld(mask, basePos, scaleFactor) {
   };
 }
 
+function maskCenterLocal(mask) {
+  const bounds = maskBounds(mask);
+  if (!bounds) {
+    return { x: mask.width / 2, y: mask.height / 2 };
+  }
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+  };
+}
+
 function maskSizeWorld(mask, scaleFactor) {
   const bounds = maskBounds(mask);
   if (!bounds) {
@@ -281,6 +309,55 @@ function maskSizeWorld(mask, scaleFactor) {
     width: Math.max(8, (bounds.maxX - bounds.minX) * scaleFactor),
     height: Math.max(8, (bounds.maxY - bounds.minY) * scaleFactor),
   };
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function isWalkableAtWorld(x, y) {
+  if (!mapMasks.walk?.data) return true;
+  const px = Math.floor(x);
+  const py = Math.floor(y);
+  if (px < 0 || py < 0 || px >= mapMasks.walk.width || py >= mapMasks.walk.height) {
+    return false;
+  }
+  const idx = (py * mapMasks.walk.width + px) * 4 + 3;
+  return mapMasks.walk.data[idx] > 10;
+}
+
+function updateGameCamera() {
+  const map = state.game.mapBg;
+  const player = state.player;
+  const world = state.game.playerWorld;
+  if (!map || !player || !world) return;
+
+  const mapScale = safeSpriteScale(map) * MAP_ZOOM;
+  map.scale = vec2(mapScale);
+
+  const halfW = (map.width * mapScale) / 2;
+  const halfH = (map.height * mapScale) / 2;
+
+  let mapX = GAME_WIDTH / 2 + halfW - world.x * mapScale;
+  let mapY = GAME_HEIGHT / 2 + halfH - world.y * mapScale;
+
+  if (halfW <= GAME_WIDTH / 2) {
+    mapX = GAME_WIDTH / 2;
+  } else {
+    mapX = clamp(mapX, GAME_WIDTH - halfW, halfW);
+  }
+
+  if (halfH <= GAME_HEIGHT / 2) {
+    mapY = GAME_HEIGHT / 2;
+  } else {
+    mapY = clamp(mapY, GAME_HEIGHT - halfH, halfH);
+  }
+
+  map.pos = vec2(mapX, mapY);
+
+  const playerScreenX = mapX - halfW + world.x * mapScale;
+  const playerScreenY = mapY - halfH + world.y * mapScale;
+  player.pos = vec2(playerScreenX, playerScreenY);
 }
 
 function avatarAt(index) {
@@ -419,13 +496,17 @@ function setupHud() {
 function setupPlayer() {
   const stats = DATA.playerStats ?? {};
   const hp = stats.Health ?? stats.hp ?? 50;
-  const speed = stats.Speed ?? stats.speed ?? 180;
+  const speed = (stats.Speed ?? stats.speed ?? 180) * 3;
   const attack = stats["Physical damage"] ?? stats.attack ?? 5;
   const magicDamage = stats["Magic Damage"] ?? stats["Magic damage"] ?? stats.magic ?? 0;
+  const spawnLocal = maskCenterLocal(mapMasks.spawn);
+  state.game.playerWorld = { x: spawnLocal.x, y: spawnLocal.y };
+
   state.player = add([
-    rect(20, 20),
+    rect(14, 24),
     pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
-    color(70, 200, 90),
+    anchor("center"),
+    color(20, 20, 20),
     area(),
     "player",
     {
@@ -438,6 +519,7 @@ function setupPlayer() {
     },
   ]);
   state.player.onCollide("enemy", (enemy) => handleCombat(enemy));
+  updateGameCamera();
 }
 
 function setupInput() {
@@ -450,6 +532,7 @@ function setupInput() {
       startGame();
       return;
     }
+    if (state.mode !== "game") return;
     startDungeon("dungeon_1");
   });
   onKeyPress("escape", () => {
@@ -461,6 +544,7 @@ function setupInput() {
 function setupMovement() {
   onUpdate(() => {
     if (state.mode !== "game") return;
+    if (!state.player) return;
     state.elapsed += dt();
 
     const dx = (isKeyDown("d") || isKeyDown("right")) - (isKeyDown("a") || isKeyDown("left"));
@@ -468,15 +552,22 @@ function setupMovement() {
 
     if (dx || dy) {
       const length = Math.hypot(dx, dy) || 1;
-      const vx = (dx / length) * state.player.speed;
-      const vy = (dy / length) * state.player.speed;
-      state.player.move(vx, vy);
+      const mapScale = state.game.mapBg?.scale?.x ?? 1;
+      const worldDx = ((dx / length) * state.player.speed * dt()) / mapScale;
+      const worldDy = ((dy / length) * state.player.speed * dt()) / mapScale;
+      const nextX = state.game.playerWorld.x + worldDx;
+      const nextY = state.game.playerWorld.y + worldDy;
+
+      if (isWalkableAtWorld(nextX, nextY)) {
+        state.game.playerWorld = { x: nextX, y: nextY };
+      }
     }
 
-    state.player.pos.x = Math.max(0, Math.min(GAME_WIDTH - 20, state.player.pos.x));
-    state.player.pos.y = Math.max(0, Math.min(GAME_HEIGHT - 20, state.player.pos.y));
+    updateGameCamera();
 
-    updateHud();
+    if (hud.status && hud.info && hud.loot) {
+      updateHud();
+    }
   });
 }
 
@@ -531,7 +622,7 @@ function setupMenu() {
     const scaleFactor = base.scale?.x ?? 1;
 
     if (isInsideMask(buttonMasks.play, mouse, base.pos, scaleFactor)) {
-      showScreen("Press Esc to return");
+      startGame();
       return;
     }
     if (isInsideMask(buttonMasks.class, mouse, base.pos, scaleFactor)) {
@@ -638,6 +729,28 @@ function setupCustomMenu() {
 
 function showMenu() {
   state.mode = "menu";
+  if (state.player) {
+    destroy(state.player);
+    state.player = null;
+  }
+  state.enemies.forEach((enemy) => destroy(enemy));
+  state.enemies = [];
+  if (state.game.mapBg) {
+    destroy(state.game.mapBg);
+    state.game.mapBg = null;
+  }
+  if (hud.status) {
+    destroy(hud.status);
+    hud.status = null;
+  }
+  if (hud.info) {
+    destroy(hud.info);
+    hud.info = null;
+  }
+  if (hud.loot) {
+    destroy(hud.loot);
+    hud.loot = null;
+  }
   if (state.screen.bg) {
     destroy(state.screen.bg);
     state.screen.bg = null;
@@ -903,10 +1016,34 @@ function startGame() {
   state.mode = "game";
   if (state.menu.base) state.menu.base.hidden = true;
   if (state.menu.hover) state.menu.hover.hidden = true;
+  if (state.game.mapBg) destroy(state.game.mapBg);
+  state.game.mapBg = add([
+    sprite("map"),
+    pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
+    anchor("center"),
+    scale(1),
+  ]);
+  state.game.mapBg.scale = vec2(safeSpriteScale(state.game.mapBg) * MAP_ZOOM);
 
+  if (state.player) {
+    destroy(state.player);
+    state.player = null;
+  }
+  state.enemies.forEach((enemy) => destroy(enemy));
+  state.enemies = [];
+
+  if (hud.status) destroy(hud.status);
+  if (hud.info) destroy(hud.info);
+  if (hud.loot) destroy(hud.loot);
+  hud.status = null;
+  hud.info = null;
+  hud.loot = null;
   setupPlayer();
   setupHud();
-  setupMovement();
+  if (!state.game.movementReady) {
+    setupMovement();
+    state.game.movementReady = true;
+  }
   updateHud();
 }
 
@@ -916,6 +1053,7 @@ async function main() {
     loadSprite("menuHover", "./data/Menu/Hovered%20menu.png"),
     loadSprite("classMenu", "./data/Class%20Menu/Class%20Menu.png"),
     loadSprite("customMenu", "./data/Custom%20Menu/Custom%20Menu.png"),
+    loadSprite("map", "./data/Map/Map.png"),
   ]);
   Object.assign(menuMask, await loadMask("./data/Menu/Menu%20area.png"));
   menuRef.width = menuMask.width || menuRef.width;
@@ -935,6 +1073,8 @@ async function main() {
   Object.assign(customMenuMasks.right, await loadMask("./data/Custom%20Menu/Right%20Avatar%20-%20Custom%20Menu.png"));
   Object.assign(customMenuMasks.scrollLeft, await loadMask("./data/Custom%20Menu/Scroll%20Left%20Button%20-%20Custom%20Menu.png"));
   Object.assign(customMenuMasks.scrollRight, await loadMask("./data/Custom%20Menu/Scroll%20Right%20Button%20-%20Custom%20Menu.png"));
+  Object.assign(mapMasks.spawn, await loadMask("./data/Map/Map%20-%20Spawn%20Area.png"));
+  Object.assign(mapMasks.walk, await loadMask("./data/Map/Map%20-%20Walk%20Section.png"));
 
   DATA.classes = await loadJson("./data/classes.json");
   DATA.items = await loadJson("./data/items.json");
