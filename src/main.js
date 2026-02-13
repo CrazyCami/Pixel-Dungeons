@@ -96,6 +96,8 @@ const DATA = {
 
 const state = {
   player: null,
+  selectedClassId: "none",
+  selectedAvatarId: "human",
   currentDungeonId: "",
   infoLog: ["Press R to spin class", "Press Enter to start dungeon"],
   lootLog: [],
@@ -133,6 +135,9 @@ const state = {
     mapBg: null,
     movementReady: false,
     playerWorld: null,
+    facing: "right",
+    animTimer: 0,
+    animFrame: 0,
   },
   loading: {
     overlay: null,
@@ -178,11 +183,7 @@ const assetState = {
 };
 
 const AVATARS = [
-  { id: "warrior", color: [148, 94, 72] },
-  { id: "tank", color: [104, 130, 100] },
-  { id: "mage", color: [92, 122, 170] },
-  { id: "assassin", color: [120, 96, 132] },
-  { id: "musketeer", color: [163, 132, 88] },
+  { id: "human", color: [148, 94, 72], sprite: "avatarHumanStandingRight" },
 ];
 
 const hud = {
@@ -374,6 +375,75 @@ function updateGameCamera() {
   player.pos = vec2(playerScreenX, playerScreenY);
 }
 
+function getHumanSpriteForMovement(dx, dy) {
+  const moving = dx !== 0 || dy !== 0;
+  const facing = state.game.facing;
+  const isBackFacing = facing === "backLeft" || facing === "backRight";
+  if (!moving) {
+    if (facing === "backLeft") return "avatarHumanStandingBackLeft";
+    if (facing === "backRight") return "avatarHumanStandingBackRight";
+    return facing === "left"
+      ? "avatarHumanStandingLeft"
+      : "avatarHumanStandingRight";
+  }
+
+  // Up movement keeps / enters a back-facing stance.
+  if (dy < 0) {
+    if (facing === "left" || facing === "backLeft") {
+      state.game.facing = "backLeft";
+      return state.game.animFrame === 0
+        ? "avatarHumanWalkingBackLeftForward1"
+        : "avatarHumanWalkingBackLeftForward2";
+    }
+    state.game.facing = "backRight";
+    return state.game.animFrame === 0
+      ? "avatarHumanWalkingBackRightForward1"
+      : "avatarHumanWalkingBackRightForward2";
+  }
+
+  // Down movement returns to side-facing forward walk frames.
+  if (dy > 0) {
+    if (facing === "left" || facing === "backLeft") {
+      state.game.facing = "left";
+      return state.game.animFrame === 0
+        ? "avatarHumanWalkingLeftForward1"
+        : "avatarHumanWalkingLeftForward2";
+    }
+    state.game.facing = "right";
+    return state.game.animFrame === 0
+      ? "avatarHumanWalkingRightForward1"
+      : "avatarHumanWalkingRightForward2";
+  }
+
+  if (dx < 0) {
+    if (isBackFacing) {
+      state.game.facing = "backLeft";
+      return state.game.animFrame === 0
+        ? "avatarHumanWalkingBackLeft1"
+        : "avatarHumanWalkingBackLeft2";
+    }
+    state.game.facing = "left";
+    return state.game.animFrame === 0
+      ? "avatarHumanWalkingLeft1"
+      : "avatarHumanWalkingLeft2";
+  }
+
+  if (dx > 0) {
+    if (isBackFacing) {
+      state.game.facing = "backRight";
+      return state.game.animFrame === 0
+        ? "avatarHumanWalkingBackRight1"
+        : "avatarHumanWalkingBackRight2";
+    }
+    state.game.facing = "right";
+    return state.game.animFrame === 0
+      ? "avatarHumanWalkingRight1"
+      : "avatarHumanWalkingRight2";
+  }
+
+  return "avatarHumanStandingRight";
+}
+
 function avatarAt(index) {
   const len = AVATARS.length;
   const normalized = ((index % len) + len) % len;
@@ -383,15 +453,7 @@ function avatarAt(index) {
 function updateCustomMenuPreviews() {
   const custom = state.customMenu;
   const current = avatarAt(custom.currentIndex);
-  const left = avatarAt(custom.currentIndex - 1);
-  const right = avatarAt(custom.currentIndex + 1);
-
-  if (custom.currentBox) custom.currentBox.color = k.rgb(...current.color);
-  if (custom.currentLabel) custom.currentLabel.text = `Current Avatar\n${current.id}`;
-  if (custom.leftBox) custom.leftBox.color = k.rgb(...left.color);
-  if (custom.leftLabel) custom.leftLabel.text = left.id;
-  if (custom.rightBox) custom.rightBox.color = k.rgb(...right.color);
-  if (custom.rightLabel) custom.rightLabel.text = right.id;
+  state.selectedAvatarId = current.id;
 }
 
 function showLoading(message) {
@@ -450,7 +512,10 @@ async function ensureCustomMenuAssets() {
   if (assetState.customMenuPromise) return assetState.customMenuPromise;
   assetState.customMenuPromise = (async () => {
     showLoading("Loading Custom Menu...");
-    await loadSprite("customMenu", "./data/Custom%20Menu/Custom%20Menu.png");
+    await Promise.all([
+      loadSprite("customMenu", "./data/Custom%20Menu/Custom%20Menu.png"),
+      loadSprite("avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"),
+    ]);
     Object.assign(customMenuMasks.back, await loadMask("./data/Custom%20Menu/Back%20Button%20-%20Custom%20Menu.png"));
     Object.assign(customMenuMasks.current, await loadMask("./data/Custom%20Menu/Current%20Avatar%20-%20Custom%20Menu.png"));
     Object.assign(customMenuMasks.left, await loadMask("./data/Custom%20Menu/Left%20Avatar%20-%20Custom%20Menu.png"));
@@ -472,7 +537,29 @@ async function ensureGameAssets() {
   if (assetState.gamePromise) return assetState.gamePromise;
   assetState.gamePromise = (async () => {
     showLoading("Loading Map...");
-    await loadSprite("map", "./data/Map/Map.png");
+    await Promise.all([
+      loadSprite("map", "./data/Map/Map.png"),
+      loadSprite("avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"),
+      loadSprite("avatarHumanStandingLeft", "./data/Avatars/Human/Human%20Standing%20Left.png"),
+      loadSprite("avatarHumanStandingBackRight", "./data/Avatars/Human/Human%20Standing%20Back%20Right.png"),
+      loadSprite("avatarHumanStandingBackLeft", "./data/Avatars/Human/Human%20Standing%20Back%20Left.png"),
+      loadSprite("avatarHumanWalkingLeft1", "./data/Avatars/Human/Human%20Walking%20Left%20-%201.png"),
+      loadSprite("avatarHumanWalkingLeft2", "./data/Avatars/Human/Human%20Walking%20Left%20-%202.png"),
+      loadSprite("avatarHumanWalkingRight1", "./data/Avatars/Human/Human%20Walking%20Right%20-%201.png"),
+      loadSprite("avatarHumanWalkingRight2", "./data/Avatars/Human/Human%20Walking%20Right%20-%202.png"),
+      loadSprite("avatarHumanWalkingRightForward1", "./data/Avatars/Human/Human%20Walking%20Right%20Forward%20-%201.png"),
+      loadSprite("avatarHumanWalkingRightForward2", "./data/Avatars/Human/Human%20Walking%20Right%20Forward%20-%202.png"),
+      loadSprite("avatarHumanWalkingLeftForward1", "./data/Avatars/Human/Human%20Walking%20Left%20Forward%20-%201.png"),
+      loadSprite("avatarHumanWalkingLeftForward2", "./data/Avatars/Human/Human%20Walking%20Left%20Forward%20-%202.png"),
+      loadSprite("avatarHumanWalkingBackRightForward1", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20Forward%20-%201.png"),
+      loadSprite("avatarHumanWalkingBackRightForward2", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20Forward%20-%202.png"),
+      loadSprite("avatarHumanWalkingBackLeftForward1", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20Forward%20-%201.png"),
+      loadSprite("avatarHumanWalkingBackLeftForward2", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20Forward%20-%202.png"),
+      loadSprite("avatarHumanWalkingBackRight1", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20-%201.png"),
+      loadSprite("avatarHumanWalkingBackRight2", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20-%202.png"),
+      loadSprite("avatarHumanWalkingBackLeft1", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20-%201.png"),
+      loadSprite("avatarHumanWalkingBackLeft2", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20-%202.png"),
+    ]);
     Object.assign(mapMasks.spawn, await loadMask("./data/Map/Map%20-%20Spawn%20Area.png"));
     Object.assign(mapMasks.walk, await loadMask("./data/Map/Map%20-%20Walk%20Section.png"));
     assetState.gameReady = true;
@@ -486,19 +573,12 @@ async function ensureGameAssets() {
 }
 
 function spinClass() {
-  if (!state.player) {
-    state.player = {
-      classId: "none",
-      lastHit: 0,
-      hp: 0,
-      attack: 0,
-      speed: 0,
-      magicDamage: 0,
-    };
-  }
   const spinTable = DATA.classes.spin_table;
   const classId = weightedChoice(spinTable.map((e) => [e.class_id, e.weight]));
-  state.player.classId = classId;
+  state.selectedClassId = classId;
+  if (state.player) {
+    state.player.classId = classId;
+  }
   const className = DATA.classes.classes[classId]?.name ?? classId;
   logPush(state.infoLog, `Spun class: ${className}`, 4);
 }
@@ -606,12 +686,23 @@ function setupPlayer() {
   const magicDamage = stats["Magic Damage"] ?? stats["Magic damage"] ?? stats.magic ?? 0;
   const spawnLocal = maskCenterLocal(mapMasks.spawn);
   state.game.playerWorld = { x: spawnLocal.x, y: spawnLocal.y };
+  state.game.facing = "right";
+  state.game.animTimer = 0;
+  state.game.animFrame = 0;
 
+  const equippedAvatar = AVATARS.find((a) => a.id === state.selectedAvatarId);
+  const initialSprite =
+    state.selectedAvatarId === "human"
+      ? "avatarHumanStandingRight"
+      : equippedAvatar?.sprite;
+  const avatarComponents =
+    initialSprite
+      ? [sprite(initialSprite), scale(0.1)]
+      : [rect(14, 24), color(20, 20, 20)];
   state.player = add([
-    rect(14, 24),
+    ...avatarComponents,
     pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
     anchor("center"),
-    color(20, 20, 20),
     area(),
     "player",
     {
@@ -619,7 +710,7 @@ function setupPlayer() {
       hp,
       attack,
       magicDamage,
-      classId: "",
+      classId: state.selectedClassId || "none",
       lastHit: 0,
     },
   ]);
@@ -665,6 +756,24 @@ function setupMovement() {
 
       if (isWalkableAtWorld(nextX, nextY)) {
         state.game.playerWorld = { x: nextX, y: nextY };
+      }
+    }
+
+    if (state.selectedAvatarId === "human" && typeof state.player.use === "function") {
+      const moving = dx !== 0 || dy !== 0;
+      if (moving) {
+        state.game.animTimer += dt();
+        if (state.game.animTimer >= 0.16) {
+          state.game.animTimer = 0;
+          state.game.animFrame = state.game.animFrame === 0 ? 1 : 0;
+        }
+      } else {
+        state.game.animTimer = 0;
+        state.game.animFrame = 0;
+      }
+      const spriteName = getHumanSpriteForMovement(dx, dy);
+      if (state.player.sprite !== spriteName) {
+        state.player.use(sprite(spriteName));
       }
     }
 
@@ -799,13 +908,40 @@ function setupCustomMenu() {
     const currentPos = maskCenterWorld(customMenuMasks.current, base.pos, baseScale);
     const leftPos = maskCenterWorld(customMenuMasks.left, base.pos, baseScale);
     const rightPos = maskCenterWorld(customMenuMasks.right, base.pos, baseScale);
+    const currentSize = maskSizeWorld(customMenuMasks.current, baseScale);
+    const leftSize = maskSizeWorld(customMenuMasks.left, baseScale);
+    const rightSize = maskSizeWorld(customMenuMasks.right, baseScale);
 
     if (state.customMenu.currentBox) state.customMenu.currentBox.pos = vec2(currentPos.x, currentPos.y);
-    if (state.customMenu.currentLabel) state.customMenu.currentLabel.pos = vec2(currentPos.x, currentPos.y);
     if (state.customMenu.leftBox) state.customMenu.leftBox.pos = vec2(leftPos.x, leftPos.y);
-    if (state.customMenu.leftLabel) state.customMenu.leftLabel.pos = vec2(leftPos.x, leftPos.y);
     if (state.customMenu.rightBox) state.customMenu.rightBox.pos = vec2(rightPos.x, rightPos.y);
-    if (state.customMenu.rightLabel) state.customMenu.rightLabel.pos = vec2(rightPos.x, rightPos.y);
+    if (state.customMenu.currentBox?.width && state.customMenu.currentBox?.height) {
+      const fitScale = Math.min(
+        (currentSize.width * 0.8) / state.customMenu.currentBox.width,
+        (currentSize.height * 0.8) / state.customMenu.currentBox.height,
+      );
+      const middleScale = (Number.isFinite(fitScale) && fitScale > 0 ? fitScale : 1) * 1.5;
+      state.customMenu.currentBox.scale = vec2(middleScale);
+
+      if (state.customMenu.leftBox?.width && state.customMenu.leftBox?.height) {
+        const leftFit = Math.min(
+          (leftSize.width * 0.8) / state.customMenu.leftBox.width,
+          (leftSize.height * 0.8) / state.customMenu.leftBox.height,
+        );
+        const leftBase = Number.isFinite(leftFit) && leftFit > 0 ? leftFit : 1;
+        const leftCurrentScale = Math.min(leftBase, middleScale * 1.5);
+        state.customMenu.leftBox.scale = vec2(leftCurrentScale * 2);
+      }
+      if (state.customMenu.rightBox?.width && state.customMenu.rightBox?.height) {
+        const rightFit = Math.min(
+          (rightSize.width * 0.8) / state.customMenu.rightBox.width,
+          (rightSize.height * 0.8) / state.customMenu.rightBox.height,
+        );
+        const rightBase = Number.isFinite(rightFit) && rightFit > 0 ? rightFit : 1;
+        const rightCurrentScale = Math.min(rightBase, middleScale * 1.5);
+        state.customMenu.rightBox.scale = vec2(rightCurrentScale * 2);
+      }
+    }
   });
 
   onMousePress("left", () => {
@@ -834,10 +970,10 @@ function setupCustomMenu() {
 
 function showMenu() {
   state.mode = "menu";
-  if (state.player) {
+  if (state.player && typeof state.player.move === "function") {
     destroy(state.player);
-    state.player = null;
   }
+  state.player = null;
   state.enemies.forEach((enemy) => destroy(enemy));
   state.enemies = [];
   if (state.game.mapBg) {
@@ -944,7 +1080,7 @@ function showScreen(title) {
 }
 
 function updateClassMenuText() {
-  const classId = state.player?.classId || "none";
+  const classId = state.player?.classId || state.selectedClassId || "none";
   const data = DATA.classes.classes[classId] ?? DATA.classes.classes.none;
   const perks = data.perks?.length ? data.perks.join("\n") : "None";
   const ability = data.ability || "None";
@@ -1081,43 +1217,42 @@ function showCustomMenu() {
   const rightSize = maskSizeWorld(customMenuMasks.right, baseScale);
 
   state.customMenu.currentBox = add([
-    rect(currentSize.width * 0.8, currentSize.height * 0.8),
+    sprite("avatarHumanStandingRight"),
     pos(currentPos.x, currentPos.y),
     anchor("center"),
-    color(120, 120, 120),
   ]);
-  state.customMenu.currentLabel = add([
-    text("", { size: 20, width: currentSize.width * 0.75 }),
-    pos(currentPos.x, currentPos.y),
-    anchor("center"),
-    color(0, 0, 0),
-  ]);
+  const previewScale = Math.min(
+    (currentSize.width * 0.8) / state.customMenu.currentBox.width,
+    (currentSize.height * 0.8) / state.customMenu.currentBox.height,
+  );
+  const middleScale = (Number.isFinite(previewScale) && previewScale > 0 ? previewScale : 1) * 1.5;
+  state.customMenu.currentBox.scale = vec2(middleScale);
 
   state.customMenu.leftBox = add([
-    rect(leftSize.width * 0.8, leftSize.height * 0.8),
+    sprite("avatarHumanStandingRight"),
     pos(leftPos.x, leftPos.y),
     anchor("center"),
-    color(120, 120, 120),
   ]);
-  state.customMenu.leftLabel = add([
-    text("", { size: 18, width: leftSize.width * 0.75 }),
-    pos(leftPos.x, leftPos.y),
-    anchor("center"),
-    color(0, 0, 0),
-  ]);
+  const leftFit = Math.min(
+    (leftSize.width * 0.8) / state.customMenu.leftBox.width,
+    (leftSize.height * 0.8) / state.customMenu.leftBox.height,
+  );
+  const leftBase = Number.isFinite(leftFit) && leftFit > 0 ? leftFit : 1;
+  const leftCurrentScale = Math.min(leftBase, middleScale * 1.5);
+  state.customMenu.leftBox.scale = vec2(leftCurrentScale * 2);
 
   state.customMenu.rightBox = add([
-    rect(rightSize.width * 0.8, rightSize.height * 0.8),
+    sprite("avatarHumanStandingRight"),
     pos(rightPos.x, rightPos.y),
     anchor("center"),
-    color(120, 120, 120),
   ]);
-  state.customMenu.rightLabel = add([
-    text("", { size: 18, width: rightSize.width * 0.75 }),
-    pos(rightPos.x, rightPos.y),
-    anchor("center"),
-    color(0, 0, 0),
-  ]);
+  const rightFit = Math.min(
+    (rightSize.width * 0.8) / state.customMenu.rightBox.width,
+    (rightSize.height * 0.8) / state.customMenu.rightBox.height,
+  );
+  const rightBase = Number.isFinite(rightFit) && rightFit > 0 ? rightFit : 1;
+  const rightCurrentScale = Math.min(rightBase, middleScale * 1.5);
+  state.customMenu.rightBox.scale = vec2(rightCurrentScale * 2);
 
   updateCustomMenuPreviews();
 }
@@ -1141,10 +1276,10 @@ async function startGame() {
   ]);
   state.game.mapBg.scale = vec2(safeSpriteScale(state.game.mapBg) * MAP_ZOOM);
 
-  if (state.player) {
+  if (state.player && typeof state.player.move === "function") {
     destroy(state.player);
-    state.player = null;
   }
+  state.player = null;
   state.enemies.forEach((enemy) => destroy(enemy));
   state.enemies = [];
 
