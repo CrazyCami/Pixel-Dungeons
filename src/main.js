@@ -138,6 +138,7 @@ const state = {
     facing: "right",
     animTimer: 0,
     animFrame: 0,
+    hudTimer: 0,
   },
   loading: {
     overlay: null,
@@ -689,6 +690,7 @@ function setupPlayer() {
   state.game.facing = "right";
   state.game.animTimer = 0;
   state.game.animFrame = 0;
+  state.game.hudTimer = 0;
 
   const equippedAvatar = AVATARS.find((a) => a.id === state.selectedAvatarId);
   const initialSprite =
@@ -753,8 +755,15 @@ function setupMovement() {
       const worldDy = ((dy / length) * state.player.speed * dt()) / mapScale;
       const nextX = state.game.playerWorld.x + worldDx;
       const nextY = state.game.playerWorld.y + worldDy;
+      const playerScale = typeof state.player.scale?.x === "number"
+        ? state.player.scale.x
+        : typeof state.player.scale === "number"
+          ? state.player.scale
+          : 1;
+      const bodyHeightWorld = ((state.player.height ?? 0) * playerScale) / mapScale;
+      const collisionYOffset = bodyHeightWorld > 0 ? bodyHeightWorld * 0.2 : 0;
 
-      if (isWalkableAtWorld(nextX, nextY)) {
+      if (isWalkableAtWorld(nextX, nextY + collisionYOffset)) {
         state.game.playerWorld = { x: nextX, y: nextY };
       }
     }
@@ -779,8 +788,12 @@ function setupMovement() {
 
     updateGameCamera();
 
-    if (hud.status && hud.info && hud.loot) {
-      updateHud();
+    state.game.hudTimer += dt();
+    if (state.game.hudTimer >= 0.1) {
+      state.game.hudTimer = 0;
+      if (hud.status && hud.info && hud.loot) {
+        updateHud();
+      }
     }
   });
 }
