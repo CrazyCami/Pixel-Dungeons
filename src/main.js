@@ -6,6 +6,8 @@ const UI_SCALE = 0.9;
 const MAP_ZOOM = 5;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
+const loadedSpriteKeys = new Set();
+const spriteLoadPromises = new Map();
 
 const mouseScreen = { x: 0, y: 0 };
 window.addEventListener("mousemove", (event) => {
@@ -50,9 +52,21 @@ function scheduleFit() {
   requestAnimationFrame(fitCanvasToViewport);
 }
 
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  const isLocalhost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  if (!isLocalhost && location.protocol !== "https:") return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch((err) => {
+      console.warn("Service worker registration failed", err);
+    });
+  });
+}
+
 window.addEventListener("resize", scheduleFit);
 window.addEventListener("load", scheduleFit);
 scheduleFit();
+registerServiceWorker();
 
 const k = kaplay({
   global: false,
@@ -240,11 +254,29 @@ async function loadMask(path) {
   const ctx = off.getContext("2d");
   ctx.drawImage(bitmap, 0, 0);
   const img = ctx.getImageData(0, 0, off.width, off.height);
+  if (typeof bitmap.close === "function") bitmap.close();
   return {
     data: img.data,
     width: off.width,
     height: off.height,
   };
+}
+
+async function loadSpriteOnce(name, path) {
+  if (loadedSpriteKeys.has(name)) return;
+  if (spriteLoadPromises.has(name)) {
+    await spriteLoadPromises.get(name);
+    return;
+  }
+  const pending = loadSprite(name, path)
+    .then(() => {
+      loadedSpriteKeys.add(name);
+    })
+    .finally(() => {
+      spriteLoadPromises.delete(name);
+    });
+  spriteLoadPromises.set(name, pending);
+  await pending;
 }
 
 function isInsideMask(mask, mouse, basePos, scaleFactor) {
@@ -380,6 +412,8 @@ function getHumanSpriteForMovement(dx, dy) {
   const moving = dx !== 0 || dy !== 0;
   const facing = state.game.facing;
   const isBackFacing = facing === "backLeft" || facing === "backRight";
+  const twoFrameStep = state.game.animFrame % 2 === 0;
+  const sideFrame = state.game.animFrame % 4;
   if (!moving) {
     if (facing === "backLeft") return "avatarHumanStandingBackLeft";
     if (facing === "backRight") return "avatarHumanStandingBackRight";
@@ -392,12 +426,12 @@ function getHumanSpriteForMovement(dx, dy) {
   if (dy < 0) {
     if (facing === "left" || facing === "backLeft") {
       state.game.facing = "backLeft";
-      return state.game.animFrame === 0
+      return twoFrameStep
         ? "avatarHumanWalkingBackLeftForward1"
         : "avatarHumanWalkingBackLeftForward2";
     }
     state.game.facing = "backRight";
-    return state.game.animFrame === 0
+    return twoFrameStep
       ? "avatarHumanWalkingBackRightForward1"
       : "avatarHumanWalkingBackRightForward2";
   }
@@ -406,12 +440,12 @@ function getHumanSpriteForMovement(dx, dy) {
   if (dy > 0) {
     if (facing === "left" || facing === "backLeft") {
       state.game.facing = "left";
-      return state.game.animFrame === 0
+      return twoFrameStep
         ? "avatarHumanWalkingLeftForward1"
         : "avatarHumanWalkingLeftForward2";
     }
     state.game.facing = "right";
-    return state.game.animFrame === 0
+    return twoFrameStep
       ? "avatarHumanWalkingRightForward1"
       : "avatarHumanWalkingRightForward2";
   }
@@ -419,27 +453,29 @@ function getHumanSpriteForMovement(dx, dy) {
   if (dx < 0) {
     if (isBackFacing) {
       state.game.facing = "backLeft";
-      return state.game.animFrame === 0
+      return twoFrameStep
         ? "avatarHumanWalkingBackLeft1"
         : "avatarHumanWalkingBackLeft2";
     }
     state.game.facing = "left";
-    return state.game.animFrame === 0
-      ? "avatarHumanWalkingLeft1"
-      : "avatarHumanWalkingLeft2";
+    if (sideFrame === 0) return "avatarHumanWalkingLeft1";
+    if (sideFrame === 1) return "avatarHumanWalkingLeft2";
+    if (sideFrame === 2) return "avatarHumanWalkingLeft3";
+    return "avatarHumanWalkingLeft4";
   }
 
   if (dx > 0) {
     if (isBackFacing) {
       state.game.facing = "backRight";
-      return state.game.animFrame === 0
+      return twoFrameStep
         ? "avatarHumanWalkingBackRight1"
         : "avatarHumanWalkingBackRight2";
     }
     state.game.facing = "right";
-    return state.game.animFrame === 0
-      ? "avatarHumanWalkingRight1"
-      : "avatarHumanWalkingRight2";
+    if (sideFrame === 0) return "avatarHumanWalkingRight1";
+    if (sideFrame === 1) return "avatarHumanWalkingRight2";
+    if (sideFrame === 2) return "avatarHumanWalkingRight3";
+    return "avatarHumanWalkingRight4";
   }
 
   return "avatarHumanStandingRight";
@@ -492,7 +528,7 @@ async function ensureClassMenuAssets() {
   if (assetState.classMenuPromise) return assetState.classMenuPromise;
   assetState.classMenuPromise = (async () => {
     showLoading("Loading Class Menu...");
-    await loadSprite("classMenu", "./data/Class%20Menu/Class%20Menu.png");
+    await loadSpriteOnce("classMenu", "./data/Class%20Menu/Class%20Menu.png");
     Object.assign(classMenuMasks.back, await loadMask("./data/Class%20Menu/Back%20Button%20-%20Class%20Menu.png"));
     Object.assign(classMenuMasks.description, await loadMask("./data/Class%20Menu/Class%20Description%20-%20Class%20Menu.png"));
     Object.assign(classMenuMasks.current, await loadMask("./data/Class%20Menu/Current%20Class%20-%20Class%20Menu.png"));
@@ -514,8 +550,8 @@ async function ensureCustomMenuAssets() {
   assetState.customMenuPromise = (async () => {
     showLoading("Loading Custom Menu...");
     await Promise.all([
-      loadSprite("customMenu", "./data/Custom%20Menu/Custom%20Menu.png"),
-      loadSprite("avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"),
+      loadSpriteOnce("customMenu", "./data/Custom%20Menu/Custom%20Menu.png"),
+      loadSpriteOnce("avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"),
     ]);
     Object.assign(customMenuMasks.back, await loadMask("./data/Custom%20Menu/Back%20Button%20-%20Custom%20Menu.png"));
     Object.assign(customMenuMasks.current, await loadMask("./data/Custom%20Menu/Current%20Avatar%20-%20Custom%20Menu.png"));
@@ -539,27 +575,31 @@ async function ensureGameAssets() {
   assetState.gamePromise = (async () => {
     showLoading("Loading Map...");
     await Promise.all([
-      loadSprite("map", "./data/Map/Map.png"),
-      loadSprite("avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"),
-      loadSprite("avatarHumanStandingLeft", "./data/Avatars/Human/Human%20Standing%20Left.png"),
-      loadSprite("avatarHumanStandingBackRight", "./data/Avatars/Human/Human%20Standing%20Back%20Right.png"),
-      loadSprite("avatarHumanStandingBackLeft", "./data/Avatars/Human/Human%20Standing%20Back%20Left.png"),
-      loadSprite("avatarHumanWalkingLeft1", "./data/Avatars/Human/Human%20Walking%20Left%20-%201.png"),
-      loadSprite("avatarHumanWalkingLeft2", "./data/Avatars/Human/Human%20Walking%20Left%20-%202.png"),
-      loadSprite("avatarHumanWalkingRight1", "./data/Avatars/Human/Human%20Walking%20Right%20-%201.png"),
-      loadSprite("avatarHumanWalkingRight2", "./data/Avatars/Human/Human%20Walking%20Right%20-%202.png"),
-      loadSprite("avatarHumanWalkingRightForward1", "./data/Avatars/Human/Human%20Walking%20Right%20Forward%20-%201.png"),
-      loadSprite("avatarHumanWalkingRightForward2", "./data/Avatars/Human/Human%20Walking%20Right%20Forward%20-%202.png"),
-      loadSprite("avatarHumanWalkingLeftForward1", "./data/Avatars/Human/Human%20Walking%20Left%20Forward%20-%201.png"),
-      loadSprite("avatarHumanWalkingLeftForward2", "./data/Avatars/Human/Human%20Walking%20Left%20Forward%20-%202.png"),
-      loadSprite("avatarHumanWalkingBackRightForward1", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20Forward%20-%201.png"),
-      loadSprite("avatarHumanWalkingBackRightForward2", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20Forward%20-%202.png"),
-      loadSprite("avatarHumanWalkingBackLeftForward1", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20Forward%20-%201.png"),
-      loadSprite("avatarHumanWalkingBackLeftForward2", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20Forward%20-%202.png"),
-      loadSprite("avatarHumanWalkingBackRight1", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20-%201.png"),
-      loadSprite("avatarHumanWalkingBackRight2", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20-%202.png"),
-      loadSprite("avatarHumanWalkingBackLeft1", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20-%201.png"),
-      loadSprite("avatarHumanWalkingBackLeft2", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20-%202.png"),
+      loadSpriteOnce("map", "./data/Map/Map.png"),
+      loadSpriteOnce("avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"),
+      loadSpriteOnce("avatarHumanStandingLeft", "./data/Avatars/Human/Human%20Standing%20Left.png"),
+      loadSpriteOnce("avatarHumanStandingBackRight", "./data/Avatars/Human/Human%20Standing%20Back%20Right.png"),
+      loadSpriteOnce("avatarHumanStandingBackLeft", "./data/Avatars/Human/Human%20Standing%20Back%20Left.png"),
+      loadSpriteOnce("avatarHumanWalkingLeft1", "./data/Avatars/Human/Human%20Walking%20Left%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingLeft2", "./data/Avatars/Human/Human%20Walking%20Left%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingLeft3", "./data/Avatars/Human/Human%20Walking%20Left%20-%203.png"),
+      loadSpriteOnce("avatarHumanWalkingLeft4", "./data/Avatars/Human/Human%20Walking%20Left%20-%204.png"),
+      loadSpriteOnce("avatarHumanWalkingRight1", "./data/Avatars/Human/Human%20Walking%20Right%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingRight2", "./data/Avatars/Human/Human%20Walking%20Right%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingRight3", "./data/Avatars/Human/Human%20Walking%20Right%20-%203.png"),
+      loadSpriteOnce("avatarHumanWalkingRight4", "./data/Avatars/Human/Human%20Walking%20Right%20-%204.png"),
+      loadSpriteOnce("avatarHumanWalkingRightForward1", "./data/Avatars/Human/Human%20Walking%20Right%20Forward%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingRightForward2", "./data/Avatars/Human/Human%20Walking%20Right%20Forward%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingLeftForward1", "./data/Avatars/Human/Human%20Walking%20Left%20Forward%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingLeftForward2", "./data/Avatars/Human/Human%20Walking%20Left%20Forward%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingBackRightForward1", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20Forward%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingBackRightForward2", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20Forward%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingBackLeftForward1", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20Forward%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingBackLeftForward2", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20Forward%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingBackRight1", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingBackRight2", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingBackLeft1", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingBackLeft2", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20-%202.png"),
     ]);
     Object.assign(mapMasks.spawn, await loadMask("./data/Map/Map%20-%20Spawn%20Area.png"));
     Object.assign(mapMasks.walk, await loadMask("./data/Map/Map%20-%20Walk%20Section.png"));
@@ -774,7 +814,7 @@ function setupMovement() {
         state.game.animTimer += dt();
         if (state.game.animTimer >= 0.16) {
           state.game.animTimer = 0;
-          state.game.animFrame = state.game.animFrame === 0 ? 1 : 0;
+          state.game.animFrame = (state.game.animFrame + 1) % 4;
         }
       } else {
         state.game.animTimer = 0;
@@ -1313,8 +1353,8 @@ async function startGame() {
 
 async function main() {
   await Promise.all([
-    loadSprite("menu", "./data/Menu/Menu.png"),
-    loadSprite("menuHover", "./data/Menu/Hovered%20menu.png"),
+    loadSpriteOnce("menu", "./data/Menu/Menu.png"),
+    loadSpriteOnce("menuHover", "./data/Menu/Hovered%20menu.png"),
   ]);
   Object.assign(menuMask, await loadMask("./data/Menu/Menu%20area.png"));
   menuRef.width = menuMask.width || menuRef.width;
