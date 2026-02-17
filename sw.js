@@ -1,4 +1,4 @@
-const CACHE_VERSION = "pixel-dungeons-v1";
+const CACHE_VERSION = "pixel-dungeons-v2";
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 
@@ -68,13 +68,16 @@ self.addEventListener("fetch", (event) => {
   if (!shouldCacheAsset(requestUrl)) return;
   event.respondWith((async () => {
     const cache = await caches.open(ASSET_CACHE);
-    const cached = await cache.match(request);
-    if (cached) return cached;
-
-    const response = await fetch(request);
-    if (response && response.ok) {
-      cache.put(request, response.clone());
+    try {
+      const fresh = await fetch(request);
+      if (fresh && fresh.ok) {
+        cache.put(request, fresh.clone());
+      }
+      return fresh;
+    } catch {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+      throw new Error(`Asset unavailable: ${request.url}`);
     }
-    return response;
   })());
 });

@@ -150,6 +150,7 @@ const state = {
     movementReady: false,
     playerWorld: null,
     facing: "right",
+    lastMoveDirection: "side",
     animTimer: 0,
     animFrame: 0,
     hudTimer: 0,
@@ -411,53 +412,22 @@ function updateGameCamera() {
 function getHumanSpriteForMovement(dx, dy) {
   const moving = dx !== 0 || dy !== 0;
   const facing = state.game.facing;
-  const isBackFacing = facing === "backLeft" || facing === "backRight";
   const twoFrameStep = state.game.animFrame % 2 === 0;
   const sideFrame = state.game.animFrame % 4;
   if (!moving) {
-    if (facing === "backLeft") return "avatarHumanStandingBackLeft";
-    if (facing === "backRight") return "avatarHumanStandingBackRight";
+    if (state.game.lastMoveDirection === "forward") {
+      return facing === "left"
+        ? "avatarHumanStandingForwardLeft"
+        : "avatarHumanStandingForwardRight";
+    }
     return facing === "left"
       ? "avatarHumanStandingLeft"
       : "avatarHumanStandingRight";
   }
 
-  // Up movement keeps / enters a back-facing stance.
-  if (dy < 0) {
-    if (facing === "left" || facing === "backLeft") {
-      state.game.facing = "backLeft";
-      return twoFrameStep
-        ? "avatarHumanWalkingBackLeftForward1"
-        : "avatarHumanWalkingBackLeftForward2";
-    }
-    state.game.facing = "backRight";
-    return twoFrameStep
-      ? "avatarHumanWalkingBackRightForward1"
-      : "avatarHumanWalkingBackRightForward2";
-  }
-
-  // Down movement returns to side-facing forward walk frames.
-  if (dy > 0) {
-    if (facing === "left" || facing === "backLeft") {
-      state.game.facing = "left";
-      return twoFrameStep
-        ? "avatarHumanWalkingLeftForward1"
-        : "avatarHumanWalkingLeftForward2";
-    }
-    state.game.facing = "right";
-    return twoFrameStep
-      ? "avatarHumanWalkingRightForward1"
-      : "avatarHumanWalkingRightForward2";
-  }
-
   if (dx < 0) {
-    if (isBackFacing) {
-      state.game.facing = "backLeft";
-      return twoFrameStep
-        ? "avatarHumanWalkingBackLeft1"
-        : "avatarHumanWalkingBackLeft2";
-    }
     state.game.facing = "left";
+    state.game.lastMoveDirection = "side";
     if (sideFrame === 0) return "avatarHumanWalkingLeft1";
     if (sideFrame === 1) return "avatarHumanWalkingLeft2";
     if (sideFrame === 2) return "avatarHumanWalkingLeft3";
@@ -465,17 +435,44 @@ function getHumanSpriteForMovement(dx, dy) {
   }
 
   if (dx > 0) {
-    if (isBackFacing) {
-      state.game.facing = "backRight";
-      return twoFrameStep
-        ? "avatarHumanWalkingBackRight1"
-        : "avatarHumanWalkingBackRight2";
-    }
     state.game.facing = "right";
+    state.game.lastMoveDirection = "side";
     if (sideFrame === 0) return "avatarHumanWalkingRight1";
     if (sideFrame === 1) return "avatarHumanWalkingRight2";
     if (sideFrame === 2) return "avatarHumanWalkingRight3";
     return "avatarHumanWalkingRight4";
+  }
+
+  // Up movement uses forward-walk frames.
+  if (dy < 0) {
+    state.game.lastMoveDirection = "forward";
+    if (facing === "left") {
+      state.game.facing = "left";
+      if (sideFrame === 0) return "avatarHumanWalkingForwardLeft1";
+      if (sideFrame === 1) return "avatarHumanWalkingForwardLeft2";
+      if (sideFrame === 2) return "avatarHumanWalkingForwardLeft3";
+      return "avatarHumanWalkingForwardLeft4";
+    }
+    state.game.facing = "right";
+    if (sideFrame === 0) return "avatarHumanWalkingForwardRight1";
+    if (sideFrame === 1) return "avatarHumanWalkingForwardRight2";
+    if (sideFrame === 2) return "avatarHumanWalkingForwardRight3";
+    return "avatarHumanWalkingForwardRight4";
+  }
+
+  // Down movement uses down-walk frames.
+  if (dy > 0) {
+    state.game.lastMoveDirection = "down";
+    if (facing === "left") {
+      state.game.facing = "left";
+      return twoFrameStep
+        ? "avatarHumanWalkingDownLeft1"
+        : "avatarHumanWalkingDownLeft2";
+    }
+    state.game.facing = "right";
+    return twoFrameStep
+      ? "avatarHumanWalkingDownRight1"
+      : "avatarHumanWalkingDownRight2";
   }
 
   return "avatarHumanStandingRight";
@@ -578,8 +575,8 @@ async function ensureGameAssets() {
       loadSpriteOnce("map", "./data/Map/Map.png"),
       loadSpriteOnce("avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"),
       loadSpriteOnce("avatarHumanStandingLeft", "./data/Avatars/Human/Human%20Standing%20Left.png"),
-      loadSpriteOnce("avatarHumanStandingBackRight", "./data/Avatars/Human/Human%20Standing%20Back%20Right.png"),
-      loadSpriteOnce("avatarHumanStandingBackLeft", "./data/Avatars/Human/Human%20Standing%20Back%20Left.png"),
+      loadSpriteOnce("avatarHumanStandingForwardRight", "./data/Avatars/Human/Human%20Standing%20Forward%20Right.png"),
+      loadSpriteOnce("avatarHumanStandingForwardLeft", "./data/Avatars/Human/Human%20Standing%20Forward%20Left.png"),
       loadSpriteOnce("avatarHumanWalkingLeft1", "./data/Avatars/Human/Human%20Walking%20Left%20-%201.png"),
       loadSpriteOnce("avatarHumanWalkingLeft2", "./data/Avatars/Human/Human%20Walking%20Left%20-%202.png"),
       loadSpriteOnce("avatarHumanWalkingLeft3", "./data/Avatars/Human/Human%20Walking%20Left%20-%203.png"),
@@ -588,18 +585,18 @@ async function ensureGameAssets() {
       loadSpriteOnce("avatarHumanWalkingRight2", "./data/Avatars/Human/Human%20Walking%20Right%20-%202.png"),
       loadSpriteOnce("avatarHumanWalkingRight3", "./data/Avatars/Human/Human%20Walking%20Right%20-%203.png"),
       loadSpriteOnce("avatarHumanWalkingRight4", "./data/Avatars/Human/Human%20Walking%20Right%20-%204.png"),
-      loadSpriteOnce("avatarHumanWalkingRightForward1", "./data/Avatars/Human/Human%20Walking%20Right%20Forward%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingRightForward2", "./data/Avatars/Human/Human%20Walking%20Right%20Forward%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingLeftForward1", "./data/Avatars/Human/Human%20Walking%20Left%20Forward%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingLeftForward2", "./data/Avatars/Human/Human%20Walking%20Left%20Forward%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingBackRightForward1", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20Forward%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingBackRightForward2", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20Forward%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingBackLeftForward1", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20Forward%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingBackLeftForward2", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20Forward%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingBackRight1", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingBackRight2", "./data/Avatars/Human/Human%20Walking%20Back%20Right%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingBackLeft1", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingBackLeft2", "./data/Avatars/Human/Human%20Walking%20Back%20Left%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingDownRight1", "./data/Avatars/Human/Human%20Walking%20Down%20Right%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingDownRight2", "./data/Avatars/Human/Human%20Walking%20Down%20Right%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingDownLeft1", "./data/Avatars/Human/Human%20Walking%20Down%20Left%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingDownLeft2", "./data/Avatars/Human/Human%20Walking%20Down%20Left%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingForwardRight1", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingForwardRight2", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingForwardRight3", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%203.png"),
+      loadSpriteOnce("avatarHumanWalkingForwardRight4", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%204.png"),
+      loadSpriteOnce("avatarHumanWalkingForwardLeft1", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%201.png"),
+      loadSpriteOnce("avatarHumanWalkingForwardLeft2", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%202.png"),
+      loadSpriteOnce("avatarHumanWalkingForwardLeft3", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%203.png"),
+      loadSpriteOnce("avatarHumanWalkingForwardLeft4", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%204.png"),
     ]);
     Object.assign(mapMasks.spawn, await loadMask("./data/Map/Map%20-%20Spawn%20Area.png"));
     Object.assign(mapMasks.walk, await loadMask("./data/Map/Map%20-%20Walk%20Section.png"));
@@ -728,6 +725,7 @@ function setupPlayer() {
   const spawnLocal = maskCenterLocal(mapMasks.spawn);
   state.game.playerWorld = { x: spawnLocal.x, y: spawnLocal.y };
   state.game.facing = "right";
+  state.game.lastMoveDirection = "side";
   state.game.animTimer = 0;
   state.game.animFrame = 0;
   state.game.hudTimer = 0;
