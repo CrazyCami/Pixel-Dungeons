@@ -4,6 +4,7 @@ const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1920;
 const UI_SCALE = 0.9;
 const MAP_ZOOM = 5;
+const CHROME_ZOOM_MULTIPLIER = 0.9;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 const loadedSpriteKeys = new Set();
@@ -27,7 +28,10 @@ function fitCanvasToViewport() {
   const vw = document.documentElement.clientWidth;
   const vh = document.documentElement.clientHeight;
   const baseScale = Math.min(vw / GAME_WIDTH, vh / GAME_HEIGHT) || 1;
-  const scale = baseScale * 1.875;
+  const isEdgeBrowser = /\bEdg\//.test(navigator.userAgent);
+  const isChromeBrowser = /\bChrome\//.test(navigator.userAgent) && !isEdgeBrowser;
+  const browserZoom = isChromeBrowser ? CHROME_ZOOM_MULTIPLIER : 1;
+  const scale = baseScale * 1.875 * browserZoom;
   canvas.style.width = `${Math.floor(GAME_WIDTH * scale)}px`;
   canvas.style.height = `${Math.floor(GAME_HEIGHT * scale)}px`;
 }
