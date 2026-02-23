@@ -4,8 +4,6 @@ const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1920;
 const UI_SCALE = 0.9;
 const MAP_ZOOM = 5;
-const EDGE_ZOOM_MULTIPLIER = 1.85;
-const CHROME_ZOOM_MULTIPLIER = 1.5;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 const loadedSpriteKeys = new Set();
@@ -29,14 +27,7 @@ function fitCanvasToViewport() {
   const vw = document.documentElement.clientWidth;
   const vh = document.documentElement.clientHeight;
   const baseScale = Math.min(vw / GAME_WIDTH, vh / GAME_HEIGHT) || 1;
-  const isEdgeBrowser = /\bEdg\//.test(navigator.userAgent);
-  const isChromeBrowser = /\bChrome\//.test(navigator.userAgent) && !isEdgeBrowser;
-  const browserZoom = isEdgeBrowser
-    ? EDGE_ZOOM_MULTIPLIER
-    : isChromeBrowser
-      ? CHROME_ZOOM_MULTIPLIER
-      : 1;
-  const scale = baseScale * browserZoom;
+  const scale = baseScale * 1.875;
   canvas.style.width = `${Math.floor(GAME_WIDTH * scale)}px`;
   canvas.style.height = `${Math.floor(GAME_HEIGHT * scale)}px`;
 }
@@ -106,14 +97,10 @@ const {
   vec2,
   destroy,
   dt,
-  rand,
 } = k;
 
 const DATA = {
   classes: null,
-  items: null,
-  lootTables: null,
-  dungeons: null,
   playerStats: null,
 };
 
@@ -121,11 +108,8 @@ const state = {
   player: null,
   selectedClassId: "none",
   selectedAvatarId: "human",
-  currentDungeonId: "",
-  infoLog: ["Press R to spin class", "Press Enter to start dungeon"],
-  lootLog: [],
+  infoLog: [],
   elapsed: 0,
-  enemies: [],
   mode: "menu",
   menu: {
     base: null,
@@ -214,7 +198,6 @@ const AVATARS = [
 const hud = {
   status: null,
   info: null,
-  loot: null,
 };
 
 function logPush(list, message, max = 6) {
@@ -630,81 +613,10 @@ function spinClass() {
   logPush(state.infoLog, `Spun class: ${className}`, 4);
 }
 
-function startDungeon(dungeonId) {
-  state.currentDungeonId = dungeonId;
-  state.enemies.forEach((enemy) => destroy(enemy));
-  state.enemies = [];
-  spawnEnemies(5);
-  const name = DATA.dungeons.dungeons[dungeonId]?.name ?? dungeonId;
-  logPush(state.infoLog, `Entered ${name}`, 4);
-}
-
-function spawnEnemies(count) {
-  const dungeon = DATA.dungeons.dungeons[state.currentDungeonId || "dungeon_1"];
-  const table = DATA.dungeons.enemy_tables[dungeon.enemy_table_id];
-  for (let i = 0; i < count; i++) {
-    const enemyId = weightedChoice(table.map((e) => [e.enemy_id, e.weight]));
-    const data = DATA.dungeons.enemies[enemyId];
-    const enemy = add([
-      rect(18, 18),
-      pos(rand(50, GAME_WIDTH - 50), rand(50, GAME_HEIGHT - 50)),
-      color(200, 60, 60),
-      area(),
-      "enemy",
-      {
-        hp: data.hp,
-        attack: data.attack,
-        lastHit: 0,
-      },
-    ]);
-    state.enemies.push(enemy);
-  }
-}
-
-function handleCombat(enemy) {
-  const now = state.elapsed;
-  const player = state.player;
-  if (now - player.lastHit < 0.25 || now - enemy.lastHit < 0.25) return;
-
-  enemy.hp -= player.attack;
-  player.hp -= enemy.attack;
-  player.lastHit = now;
-  enemy.lastHit = now;
-
-  if (enemy.hp <= 0) {
-    destroy(enemy);
-    state.enemies = state.enemies.filter((e) => e !== enemy);
-    dropLoot();
-  }
-}
-
-function dropLoot() {
-  if (!state.currentDungeonId) return;
-  const tableId = DATA.dungeons.dungeons[state.currentDungeonId].loot_table_id;
-  const entries = DATA.lootTables.tables[tableId];
-
-  const classTags = state.player.classId
-    ? DATA.classes.classes[state.player.classId]?.loot_affinity_tags ?? []
-    : [];
-
-  const weighted = entries.map((entry) => {
-    let weight = entry.weight;
-    if (classTags.length && entry.tags?.some((tag) => classTags.includes(tag))) {
-      weight *= 1.5;
-    }
-    return [entry.item_id, weight];
-  });
-
-  const itemId = weightedChoice(weighted);
-  const item = DATA.items.items[itemId];
-  logPush(state.lootLog, `Loot: ${item?.name ?? itemId}`);
-}
-
 function updateHud() {
   const player = state.player;
-  hud.status.text = `HP: ${player.hp}\nClass: ${player.classId || "None"}\nDungeon: ${state.currentDungeonId || "None"}`;
+  hud.status.text = `HP: ${player.hp}\nClass: ${player.classId || "None"}`;
   hud.info.text = state.infoLog.join("\n");
-  hud.loot.text = state.lootLog.join("\n");
 }
 
 function setupHud() {
@@ -716,11 +628,6 @@ function setupHud() {
   hud.info = add([
     text("", { size: 16 }),
     pos(10, 90),
-    color(200, 200, 200),
-  ]);
-  hud.loot = add([
-    text("", { size: 16 }),
-    pos(10, 170),
     color(200, 200, 200),
   ]);
 }
@@ -763,22 +670,14 @@ function setupPlayer() {
       lastHit: 0,
     },
   ]);
-  state.player.onCollide("enemy", (enemy) => handleCombat(enemy));
   updateGameCamera();
 }
 
 function setupInput() {
-  onKeyPress("r", () => {
-    if (state.mode !== "game") return;
-    spinClass();
-  });
   onKeyPress("enter", () => {
     if (state.mode === "menu") {
       startGame().catch((err) => console.error(err));
-      return;
     }
-    if (state.mode !== "game") return;
-    startDungeon("dungeon_1");
   });
   onKeyPress("escape", () => {
     if (state.mode === "menu") return;
@@ -845,7 +744,7 @@ function setupMovement() {
     state.game.hudTimer += dt();
     if (state.game.hudTimer >= 0.1) {
       state.game.hudTimer = 0;
-      if (hud.status && hud.info && hud.loot) {
+      if (hud.status && hud.info) {
         updateHud();
       }
     }
@@ -1041,8 +940,6 @@ function showMenu() {
     destroy(state.player);
   }
   state.player = null;
-  state.enemies.forEach((enemy) => destroy(enemy));
-  state.enemies = [];
   if (state.game.mapBg) {
     destroy(state.game.mapBg);
     state.game.mapBg = null;
@@ -1054,10 +951,6 @@ function showMenu() {
   if (hud.info) {
     destroy(hud.info);
     hud.info = null;
-  }
-  if (hud.loot) {
-    destroy(hud.loot);
-    hud.loot = null;
   }
   if (state.screen.bg) {
     destroy(state.screen.bg);
@@ -1347,15 +1240,11 @@ async function startGame() {
     destroy(state.player);
   }
   state.player = null;
-  state.enemies.forEach((enemy) => destroy(enemy));
-  state.enemies = [];
 
   if (hud.status) destroy(hud.status);
   if (hud.info) destroy(hud.info);
-  if (hud.loot) destroy(hud.loot);
   hud.status = null;
   hud.info = null;
-  hud.loot = null;
   setupPlayer();
   setupHud();
   if (!state.game.movementReady) {
@@ -1380,9 +1269,6 @@ async function main() {
   assetState.menuReady = true;
 
   DATA.classes = await loadJson("./data/classes.json");
-  DATA.items = await loadJson("./data/items.json");
-  DATA.lootTables = await loadJson("./data/loot_tables.json");
-  DATA.dungeons = await loadJson("./data/dungeons.json");
   DATA.playerStats = await loadCsv("./data/Player Stats - Sheet1.csv");
 
   setupInput();

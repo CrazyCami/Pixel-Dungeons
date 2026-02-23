@@ -18,8 +18,8 @@ Then open: `http://localhost:5173`
 
 ## Controls
 - Move: WASD or Arrow keys
-- Spin Class: R
-- Start Dungeon: Enter
+- Start Game (from menu): Enter
+- Spin Class: Class Menu only
 
 ## Notes
 - Data lives under `data/` as JSON.
