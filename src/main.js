@@ -799,9 +799,16 @@ function setupMovement() {
           ? state.player.scale
           : 1;
       const bodyHeightWorld = ((state.player.height ?? 0) * playerScale) / mapScale;
-      const collisionYOffset = bodyHeightWorld > 0 ? bodyHeightWorld * 0.2 : 0;
+      const bodyWidthWorld = ((state.player.width ?? 0) * playerScale) / mapScale;
+      const collisionYOffset = bodyHeightWorld > 0 ? bodyHeightWorld * 0.5 : 0;
+      const sideProbeOffset = bodyWidthWorld > 0 ? bodyWidthWorld * 0.15 : 0;
+      const probeY = nextY + collisionYOffset;
+      const canMove =
+        isWalkableAtWorld(nextX, probeY)
+        && isWalkableAtWorld(nextX - sideProbeOffset, probeY)
+        && isWalkableAtWorld(nextX + sideProbeOffset, probeY);
 
-      if (isWalkableAtWorld(nextX, nextY + collisionYOffset)) {
+      if (canMove) {
         state.game.playerWorld = { x: nextX, y: nextY };
       }
     }
