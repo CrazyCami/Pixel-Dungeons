@@ -4,7 +4,6 @@ const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1920;
 const UI_SCALE = 0.9;
 const MAP_ZOOM = 5;
-const GLOBAL_ZOOM = 0.8;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 const loadedSpriteKeys = new Set();
@@ -28,7 +27,7 @@ function fitCanvasToViewport() {
   const vw = document.documentElement.clientWidth;
   const vh = document.documentElement.clientHeight;
   const baseScale = Math.min(vw / GAME_WIDTH, vh / GAME_HEIGHT) || 1;
-  const scale = baseScale * 1.875 * GLOBAL_ZOOM;
+  const scale = baseScale;
   canvas.style.width = `${Math.floor(GAME_WIDTH * scale)}px`;
   canvas.style.height = `${Math.floor(GAME_HEIGHT * scale)}px`;
 }
@@ -801,7 +800,7 @@ function setupMovement() {
           : 1;
       const bodyHeightWorld = ((state.player.height ?? 0) * playerScale) / mapScale;
       const bodyWidthWorld = ((state.player.width ?? 0) * playerScale) / mapScale;
-      const collisionYOffset = bodyHeightWorld > 0 ? bodyHeightWorld * 0.35 : 0;
+      const collisionYOffset = bodyHeightWorld > 0 ? bodyHeightWorld * 0.2 : 0;
       const sideProbeOffset = bodyWidthWorld > 0 ? bodyWidthWorld * 0.1 : 0;
       const probeY = nextY + collisionYOffset;
       const canMove =
