@@ -4,6 +4,7 @@ const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1920;
 const UI_SCALE = 0.9;
 const MAP_ZOOM = 5;
+const EDGE_ZOOM_MULTIPLIER = 1.8;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 const loadedSpriteKeys = new Set();
@@ -24,10 +25,13 @@ function getMouseWorld() {
 }
 
 function fitCanvasToViewport() {
-  const vw = document.documentElement.clientWidth;
-  const vh = document.documentElement.clientHeight;
+  const viewport = window.visualViewport;
+  const vw = viewport?.width ?? document.documentElement.clientWidth;
+  const vh = viewport?.height ?? document.documentElement.clientHeight;
   const baseScale = Math.min(vw / GAME_WIDTH, vh / GAME_HEIGHT) || 1;
-  const scale = baseScale;
+  const isEdgeBrowser = /\bEdg\//.test(navigator.userAgent);
+  const browserZoom = isEdgeBrowser ? EDGE_ZOOM_MULTIPLIER : 1;
+  const scale = baseScale * browserZoom;
   canvas.style.width = `${Math.floor(GAME_WIDTH * scale)}px`;
   canvas.style.height = `${Math.floor(GAME_HEIGHT * scale)}px`;
 }
@@ -65,6 +69,9 @@ function registerServiceWorker() {
 
 window.addEventListener("resize", scheduleFit);
 window.addEventListener("load", scheduleFit);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", scheduleFit);
+}
 scheduleFit();
 registerServiceWorker();
 
