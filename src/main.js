@@ -5,6 +5,8 @@ const GAME_HEIGHT = 1920;
 const UI_SCALE = 0.9;
 const MAP_ZOOM = 5;
 const MASK_MAX_DIMENSION = 2048;
+const LOADING_BAR_WIDTH = 640;
+const LOADING_BAR_HEIGHT = 26;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 const loadedSpriteKeys = new Set();
@@ -157,6 +159,10 @@ const state = {
   loading: {
     overlay: null,
     label: null,
+    barBg: null,
+    barFill: null,
+    message: "",
+    progress: 0,
   },
 };
 
@@ -197,6 +203,7 @@ const assetState = {
   customMenuPromise: null,
   gamePromise: null,
   gameOverlayPromise: null,
+  humanAnimPromise: null,
 };
 
 const AVATARS = [
@@ -208,9 +215,43 @@ const hud = {
   info: null,
 };
 
+const HUMAN_CORE_SPRITES = [
+  ["avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"],
+  ["avatarHumanStandingLeft", "./data/Avatars/Human/Human%20Standing%20Left.png"],
+  ["avatarHumanStandingForwardRight", "./data/Avatars/Human/Human%20Standing%20Forward%20Right.png"],
+  ["avatarHumanStandingForwardLeft", "./data/Avatars/Human/Human%20Standing%20Forward%20Left.png"],
+];
+
+const HUMAN_ANIMATION_SPRITES = [
+  ["avatarHumanWalkingLeft1", "./data/Avatars/Human/Human%20Walking%20Left%20-%201.png"],
+  ["avatarHumanWalkingLeft2", "./data/Avatars/Human/Human%20Walking%20Left%20-%202.png"],
+  ["avatarHumanWalkingLeft3", "./data/Avatars/Human/Human%20Walking%20Left%20-%203.png"],
+  ["avatarHumanWalkingLeft4", "./data/Avatars/Human/Human%20Walking%20Left%20-%204.png"],
+  ["avatarHumanWalkingRight1", "./data/Avatars/Human/Human%20Walking%20Right%20-%201.png"],
+  ["avatarHumanWalkingRight2", "./data/Avatars/Human/Human%20Walking%20Right%20-%202.png"],
+  ["avatarHumanWalkingRight3", "./data/Avatars/Human/Human%20Walking%20Right%20-%203.png"],
+  ["avatarHumanWalkingRight4", "./data/Avatars/Human/Human%20Walking%20Right%20-%204.png"],
+  ["avatarHumanWalkingDownRight1", "./data/Avatars/Human/Human%20Walking%20Down%20Right%20-%201.png"],
+  ["avatarHumanWalkingDownRight2", "./data/Avatars/Human/Human%20Walking%20Down%20Right%20-%202.png"],
+  ["avatarHumanWalkingDownLeft1", "./data/Avatars/Human/Human%20Walking%20Down%20Left%20-%201.png"],
+  ["avatarHumanWalkingDownLeft2", "./data/Avatars/Human/Human%20Walking%20Down%20Left%20-%202.png"],
+  ["avatarHumanWalkingForwardRight1", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%201.png"],
+  ["avatarHumanWalkingForwardRight2", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%202.png"],
+  ["avatarHumanWalkingForwardRight3", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%203.png"],
+  ["avatarHumanWalkingForwardRight4", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%204.png"],
+  ["avatarHumanWalkingForwardLeft1", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%201.png"],
+  ["avatarHumanWalkingForwardLeft2", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%202.png"],
+  ["avatarHumanWalkingForwardLeft3", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%203.png"],
+  ["avatarHumanWalkingForwardLeft4", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%204.png"],
+];
+
 function logPush(list, message, max = 6) {
   list.push(message);
   if (list.length > max) list.splice(0, list.length - max);
+}
+
+function isSpriteLoaded(name) {
+  return loadedSpriteKeys.has(name);
 }
 
 function weightedChoice(entries) {
@@ -563,15 +604,72 @@ function showLoading(message) {
   if (!state.loading.label) {
     state.loading.label = add([
       text("", { size: 24 }),
-      pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
+      pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 62),
       anchor("center"),
       color(230, 230, 230),
     ]);
   }
+  if (!state.loading.barBg) {
+    state.loading.barBg = add([
+      rect(LOADING_BAR_WIDTH, LOADING_BAR_HEIGHT),
+      pos((GAME_WIDTH - LOADING_BAR_WIDTH) / 2, GAME_HEIGHT / 2 - (LOADING_BAR_HEIGHT / 2)),
+      color(45, 45, 55),
+    ]);
+  }
+  if (!state.loading.barFill) {
+    state.loading.barFill = add([
+      rect(0, LOADING_BAR_HEIGHT),
+      pos((GAME_WIDTH - LOADING_BAR_WIDTH) / 2, GAME_HEIGHT / 2 - (LOADING_BAR_HEIGHT / 2)),
+      color(80, 200, 120),
+    ]);
+  }
+  state.loading.message = message;
+  state.loading.progress = 0;
   state.loading.label.text = message;
 }
 
+function updateLoadingProgress(done, total, message = state.loading.message || "Loading...") {
+  if (!state.loading.overlay) showLoading(message);
+  const safeTotal = Math.max(1, total);
+  const progress = clamp(done / safeTotal, 0, 1);
+  const percent = Math.round(progress * 100);
+  state.loading.message = message;
+  state.loading.progress = progress;
+
+  if (state.loading.label) {
+    state.loading.label.text = `${message} (${percent}%)`;
+  }
+  if (state.loading.barFill) {
+    destroy(state.loading.barFill);
+  }
+  state.loading.barFill = add([
+    rect(Math.max(2, LOADING_BAR_WIDTH * progress), LOADING_BAR_HEIGHT),
+    pos((GAME_WIDTH - LOADING_BAR_WIDTH) / 2, GAME_HEIGHT / 2 - (LOADING_BAR_HEIGHT / 2)),
+    color(80, 200, 120),
+  ]);
+}
+
+async function runTasksWithProgress(tasks, message) {
+  showLoading(message);
+  const total = tasks.length;
+  let done = 0;
+  updateLoadingProgress(done, total, message);
+  await Promise.all(tasks.map(async (task) => {
+    await task();
+    done += 1;
+    updateLoadingProgress(done, total, message);
+  }));
+}
+
 function hideLoading() {
+  if (state.loading.barFill) {
+    destroy(state.loading.barFill);
+    state.loading.barFill = null;
+  }
+  if (state.loading.barBg) {
+    destroy(state.loading.barBg);
+    state.loading.barBg = null;
+  }
   if (state.loading.label) {
     destroy(state.loading.label);
     state.loading.label = null;
@@ -580,6 +678,8 @@ function hideLoading() {
     destroy(state.loading.overlay);
     state.loading.overlay = null;
   }
+  state.loading.message = "";
+  state.loading.progress = 0;
 }
 
 async function ensureClassMenuAssets() {
@@ -632,36 +732,13 @@ async function ensureGameAssets() {
   if (assetState.gameReady) return;
   if (assetState.gamePromise) return assetState.gamePromise;
   assetState.gamePromise = (async () => {
-    showLoading("Loading Map...");
-    await Promise.all([
-      loadSpriteOnce("map", "./data/Map/Map.png"),
-      loadSpriteOnce("avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"),
-      loadSpriteOnce("avatarHumanStandingLeft", "./data/Avatars/Human/Human%20Standing%20Left.png"),
-      loadSpriteOnce("avatarHumanStandingForwardRight", "./data/Avatars/Human/Human%20Standing%20Forward%20Right.png"),
-      loadSpriteOnce("avatarHumanStandingForwardLeft", "./data/Avatars/Human/Human%20Standing%20Forward%20Left.png"),
-      loadSpriteOnce("avatarHumanWalkingLeft1", "./data/Avatars/Human/Human%20Walking%20Left%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingLeft2", "./data/Avatars/Human/Human%20Walking%20Left%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingLeft3", "./data/Avatars/Human/Human%20Walking%20Left%20-%203.png"),
-      loadSpriteOnce("avatarHumanWalkingLeft4", "./data/Avatars/Human/Human%20Walking%20Left%20-%204.png"),
-      loadSpriteOnce("avatarHumanWalkingRight1", "./data/Avatars/Human/Human%20Walking%20Right%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingRight2", "./data/Avatars/Human/Human%20Walking%20Right%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingRight3", "./data/Avatars/Human/Human%20Walking%20Right%20-%203.png"),
-      loadSpriteOnce("avatarHumanWalkingRight4", "./data/Avatars/Human/Human%20Walking%20Right%20-%204.png"),
-      loadSpriteOnce("avatarHumanWalkingDownRight1", "./data/Avatars/Human/Human%20Walking%20Down%20Right%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingDownRight2", "./data/Avatars/Human/Human%20Walking%20Down%20Right%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingDownLeft1", "./data/Avatars/Human/Human%20Walking%20Down%20Left%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingDownLeft2", "./data/Avatars/Human/Human%20Walking%20Down%20Left%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingForwardRight1", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingForwardRight2", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingForwardRight3", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%203.png"),
-      loadSpriteOnce("avatarHumanWalkingForwardRight4", "./data/Avatars/Human/Human%20Walking%20Forward%20Right%20-%204.png"),
-      loadSpriteOnce("avatarHumanWalkingForwardLeft1", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%201.png"),
-      loadSpriteOnce("avatarHumanWalkingForwardLeft2", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%202.png"),
-      loadSpriteOnce("avatarHumanWalkingForwardLeft3", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%203.png"),
-      loadSpriteOnce("avatarHumanWalkingForwardLeft4", "./data/Avatars/Human/Human%20Walking%20Forward%20Left%20-%204.png"),
-    ]);
-    Object.assign(mapMasks.spawn, await loadMask("./data/Map/Map%20-%20Spawn%20Area.png"));
-    Object.assign(mapMasks.walk, await loadMask("./data/Map/Map%20-%20Walk%20Section.png"));
+    const tasks = [
+      () => loadSpriteOnce("map", "./data/Map/Map.png"),
+      ...HUMAN_CORE_SPRITES.map(([name, path]) => () => loadSpriteOnce(name, path)),
+      () => loadMask("./data/Map/Map%20-%20Spawn%20Area.png").then((mask) => Object.assign(mapMasks.spawn, mask)),
+      () => loadMask("./data/Map/Map%20-%20Walk%20Section.png").then((mask) => Object.assign(mapMasks.walk, mask)),
+    ];
+    await runTasksWithProgress(tasks, "Loading Map");
     assetState.gameReady = true;
   })();
   try {
@@ -670,6 +747,16 @@ async function ensureGameAssets() {
     assetState.gamePromise = null;
     hideLoading();
   }
+}
+
+async function ensureHumanAnimationSprites() {
+  if (assetState.humanAnimPromise) return assetState.humanAnimPromise;
+  assetState.humanAnimPromise = Promise.all(
+    HUMAN_ANIMATION_SPRITES.map(([name, path]) => loadSpriteOnce(name, path)),
+  ).finally(() => {
+    assetState.humanAnimPromise = null;
+  });
+  return assetState.humanAnimPromise;
 }
 
 async function ensureGameOverlayAssets() {
@@ -869,7 +956,7 @@ function setupMovement() {
         state.game.animFrame = 0;
       }
       const spriteName = getHumanSpriteForMovement(dx, dy);
-      if (state.player.sprite !== spriteName) {
+      if (isSpriteLoaded(spriteName) && state.player.sprite !== spriteName) {
         state.player.use(sprite(spriteName));
       }
     }
@@ -1417,6 +1504,7 @@ async function startGame() {
   hud.info = null;
   setupPlayer();
   setupHud();
+  ensureHumanAnimationSprites().catch((err) => console.error(err));
   if (assetState.gameOverlayReady) {
     setupGameOverlay();
   } else {
