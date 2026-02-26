@@ -4,6 +4,7 @@ const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1920;
 const UI_SCALE = 0.9;
 const MAP_ZOOM = 5;
+const MASK_MAX_DIMENSION = 2048;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 const loadedSpriteKeys = new Set();
@@ -246,18 +247,35 @@ async function loadMask(path) {
   if (!res.ok) throw new Error(`Failed to load ${path}`);
   const blob = await res.blob();
   const bitmap = await createImageBitmap(blob);
+  const sourceWidth = bitmap.width;
+  const sourceHeight = bitmap.height;
+  const maxSourceDim = Math.max(sourceWidth, sourceHeight);
+  const downsampleRatio =
+    maxSourceDim > MASK_MAX_DIMENSION
+      ? MASK_MAX_DIMENSION / maxSourceDim
+      : 1;
   const off = document.createElement("canvas");
-  off.width = bitmap.width;
-  off.height = bitmap.height;
+  off.width = Math.max(1, Math.round(sourceWidth * downsampleRatio));
+  off.height = Math.max(1, Math.round(sourceHeight * downsampleRatio));
   const ctx = off.getContext("2d");
-  ctx.drawImage(bitmap, 0, 0);
+  ctx.drawImage(bitmap, 0, 0, off.width, off.height);
   const img = ctx.getImageData(0, 0, off.width, off.height);
   if (typeof bitmap.close === "function") bitmap.close();
   return {
     data: img.data,
     width: off.width,
     height: off.height,
+    sourceWidth,
+    sourceHeight,
   };
+}
+
+function maskSourceWidth(mask) {
+  return mask?.sourceWidth || mask?.width || 0;
+}
+
+function maskSourceHeight(mask) {
+  return mask?.sourceHeight || mask?.height || 0;
 }
 
 async function loadSpriteOnce(name, path) {
@@ -279,20 +297,24 @@ async function loadSpriteOnce(name, path) {
 
 function isInsideMask(mask, mouse, basePos, scaleFactor) {
   if (!mask?.data || !mouse) return false;
-  const halfW = (mask.width * scaleFactor) / 2;
-  const halfH = (mask.height * scaleFactor) / 2;
+  const sourceW = maskSourceWidth(mask);
+  const sourceH = maskSourceHeight(mask);
+  const halfW = (sourceW * scaleFactor) / 2;
+  const halfH = (sourceH * scaleFactor) / 2;
   const localX = mouse.x - basePos.x + halfW;
   const localY = mouse.y - basePos.y + halfH;
   if (
     localX < 0 ||
     localY < 0 ||
-    localX >= mask.width * scaleFactor ||
-    localY >= mask.height * scaleFactor
+    localX >= sourceW * scaleFactor ||
+    localY >= sourceH * scaleFactor
   ) {
     return false;
   }
-  const imgX = Math.floor(localX / scaleFactor);
-  const imgY = Math.floor(localY / scaleFactor);
+  const maskXRatio = mask.width / sourceW;
+  const maskYRatio = mask.height / sourceH;
+  const imgX = Math.floor((localX / scaleFactor) * maskXRatio);
+  const imgY = Math.floor((localY / scaleFactor) * maskYRatio);
   const idx = (imgY * mask.width + imgX) * 4;
   const a = mask.data[idx + 3];
   return a > 10;
@@ -316,7 +338,16 @@ function maskBounds(mask) {
     }
   }
   if (minX > maxX || minY > maxY) return null;
-  return { minX, minY, maxX, maxY };
+  const sourceW = maskSourceWidth(mask);
+  const sourceH = maskSourceHeight(mask);
+  const toSourceX = sourceW / mask.width;
+  const toSourceY = sourceH / mask.height;
+  return {
+    minX: minX * toSourceX,
+    minY: minY * toSourceY,
+    maxX: (maxX + 1) * toSourceX,
+    maxY: (maxY + 1) * toSourceY,
+  };
 }
 
 function maskCenterWorld(mask, basePos, scaleFactor) {
@@ -324,8 +355,8 @@ function maskCenterWorld(mask, basePos, scaleFactor) {
   if (!bounds) return { x: basePos.x, y: basePos.y };
   const cx = (bounds.minX + bounds.maxX) / 2;
   const cy = (bounds.minY + bounds.maxY) / 2;
-  const halfW = (mask.width * scaleFactor) / 2;
-  const halfH = (mask.height * scaleFactor) / 2;
+  const halfW = (maskSourceWidth(mask) * scaleFactor) / 2;
+  const halfH = (maskSourceHeight(mask) * scaleFactor) / 2;
   return {
     x: basePos.x - halfW + cx * scaleFactor,
     y: basePos.y - halfH + cy * scaleFactor,
@@ -335,7 +366,7 @@ function maskCenterWorld(mask, basePos, scaleFactor) {
 function maskCenterLocal(mask) {
   const bounds = maskBounds(mask);
   if (!bounds) {
-    return { x: mask.width / 2, y: mask.height / 2 };
+    return { x: maskSourceWidth(mask) / 2, y: maskSourceHeight(mask) / 2 };
   }
   return {
     x: (bounds.minX + bounds.maxX) / 2,
@@ -347,8 +378,8 @@ function maskSizeWorld(mask, scaleFactor) {
   const bounds = maskBounds(mask);
   if (!bounds) {
     return {
-      width: mask.width * scaleFactor,
-      height: mask.height * scaleFactor,
+      width: maskSourceWidth(mask) * scaleFactor,
+      height: maskSourceHeight(mask) * scaleFactor,
     };
   }
   return {
@@ -393,10 +424,14 @@ function isWalkableAtWorld(x, y) {
   if (!mapMasks.walk?.data) return true;
   const px = Math.floor(x);
   const py = Math.floor(y);
-  if (px < 0 || py < 0 || px >= mapMasks.walk.width || py >= mapMasks.walk.height) {
+  const sourceW = maskSourceWidth(mapMasks.walk);
+  const sourceH = maskSourceHeight(mapMasks.walk);
+  if (px < 0 || py < 0 || px >= sourceW || py >= sourceH) {
     return false;
   }
-  const idx = (py * mapMasks.walk.width + px) * 4 + 3;
+  const maskX = Math.floor((px * mapMasks.walk.width) / sourceW);
+  const maskY = Math.floor((py * mapMasks.walk.height) / sourceH);
+  const idx = (maskY * mapMasks.walk.width + maskX) * 4 + 3;
   return mapMasks.walk.data[idx] > 10;
 }
 
