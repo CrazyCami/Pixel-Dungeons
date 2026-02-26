@@ -4,7 +4,6 @@ const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1920;
 const UI_SCALE = 0.9;
 const MAP_ZOOM = 5;
-const CHROME_ZOOM_MULTIPLIER = 0.9;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 const loadedSpriteKeys = new Set();
@@ -28,10 +27,7 @@ function fitCanvasToViewport() {
   const vw = document.documentElement.clientWidth;
   const vh = document.documentElement.clientHeight;
   const baseScale = Math.min(vw / GAME_WIDTH, vh / GAME_HEIGHT) || 1;
-  const isEdgeBrowser = /\bEdg\//.test(navigator.userAgent);
-  const isChromeBrowser = /\bChrome\//.test(navigator.userAgent) && !isEdgeBrowser;
-  const browserZoom = isChromeBrowser ? CHROME_ZOOM_MULTIPLIER : 1;
-  const scale = baseScale * 1.875 * browserZoom;
+  const scale = baseScale * 1.875;
   canvas.style.width = `${Math.floor(GAME_WIDTH * scale)}px`;
   canvas.style.height = `${Math.floor(GAME_HEIGHT * scale)}px`;
 }
@@ -144,7 +140,12 @@ const state = {
   },
   game: {
     mapBg: null,
+    overlayBg: null,
+    overlayBackButton: null,
+    overlayPlayButton: null,
+    overlayInventoryButton: null,
     movementReady: false,
+    overlayInputReady: false,
     playerWorld: null,
     facing: "right",
     lastMoveDirection: "side",
@@ -360,6 +361,34 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function fitScaleToBounds(obj, maxWidth, maxHeight) {
+  if (!obj?.width || !obj?.height) return 1;
+  const scaleX = maxWidth / obj.width;
+  const scaleY = maxHeight / obj.height;
+  const scaleFactor = Math.min(scaleX, scaleY);
+  return Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+}
+
+function objectScaleValue(obj) {
+  if (!obj) return 1;
+  if (typeof obj.scale?.x === "number") return obj.scale.x;
+  if (typeof obj.scale === "number") return obj.scale;
+  return 1;
+}
+
+function isInsideObject(mouse, obj) {
+  if (!mouse || !obj || !obj.width || !obj.height || !obj.pos) return false;
+  const s = objectScaleValue(obj);
+  const halfW = (obj.width * s) / 2;
+  const halfH = (obj.height * s) / 2;
+  return (
+    mouse.x >= obj.pos.x - halfW
+    && mouse.x <= obj.pos.x + halfW
+    && mouse.y >= obj.pos.y - halfH
+    && mouse.y <= obj.pos.y + halfH
+  );
+}
+
 function isWalkableAtWorld(x, y) {
   if (!mapMasks.walk?.data) return true;
   const px = Math.floor(x);
@@ -569,6 +598,10 @@ async function ensureGameAssets() {
     showLoading("Loading Map...");
     await Promise.all([
       loadSpriteOnce("map", "./data/Map/Map.png"),
+      loadSpriteOnce("mapOverlay", "./data/Map/Map%20Overlay.png"),
+      loadSpriteOnce("mapOverlayBackButton", "./data/Map/Back%20To%20Menu%20Button%20-%20Map.png"),
+      loadSpriteOnce("mapOverlayPlayButton", "./data/Map/Play%20Button%20-%20Map.png"),
+      loadSpriteOnce("mapOverlayInventoryButton", "./data/Map/Inventory%20Button%20-%20Map.png"),
       loadSpriteOnce("avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"),
       loadSpriteOnce("avatarHumanStandingLeft", "./data/Avatars/Human/Human%20Standing%20Left.png"),
       loadSpriteOnce("avatarHumanStandingForwardRight", "./data/Avatars/Human/Human%20Standing%20Forward%20Right.png"),
@@ -636,6 +669,56 @@ function setupHud() {
   ]);
 }
 
+function setupGameOverlay() {
+  if (state.game.overlayBg) destroy(state.game.overlayBg);
+  if (state.game.overlayBackButton) destroy(state.game.overlayBackButton);
+  if (state.game.overlayPlayButton) destroy(state.game.overlayPlayButton);
+  if (state.game.overlayInventoryButton) destroy(state.game.overlayInventoryButton);
+
+  state.game.overlayBg = add([
+    sprite("mapOverlay"),
+    pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
+    anchor("center"),
+    scale(1),
+  ]);
+  const overlayScale = fitScaleToBounds(
+    state.game.overlayBg,
+    GAME_WIDTH * 0.95,
+    GAME_HEIGHT * 0.22,
+  );
+  state.game.overlayBg.scale = vec2(overlayScale);
+  const overlayHalfHeight = (state.game.overlayBg.height * overlayScale) / 2;
+  state.game.overlayBg.pos = vec2(GAME_WIDTH / 2, GAME_HEIGHT - overlayHalfHeight - 8);
+
+  const buttonScale = overlayScale;
+  const buttonY = GAME_HEIGHT - 50;
+
+  state.game.overlayBackButton = add([
+    sprite("mapOverlayBackButton"),
+    pos(GAME_WIDTH / 2, buttonY),
+    anchor("center"),
+    scale(buttonScale),
+  ]);
+  state.game.overlayPlayButton = add([
+    sprite("mapOverlayPlayButton"),
+    pos(GAME_WIDTH / 2, buttonY),
+    anchor("center"),
+    scale(buttonScale),
+  ]);
+  state.game.overlayInventoryButton = add([
+    sprite("mapOverlayInventoryButton"),
+    pos(GAME_WIDTH / 2, buttonY),
+    anchor("center"),
+    scale(buttonScale),
+  ]);
+
+  const buttonWidth = (state.game.overlayPlayButton.width || 0) * buttonScale;
+  const buttonSpacing = Math.max(110, buttonWidth * 1.1);
+  state.game.overlayBackButton.pos = vec2(GAME_WIDTH / 2 - buttonSpacing, buttonY);
+  state.game.overlayPlayButton.pos = vec2(GAME_WIDTH / 2, buttonY);
+  state.game.overlayInventoryButton.pos = vec2(GAME_WIDTH / 2 + buttonSpacing, buttonY);
+}
+
 function setupPlayer() {
   const stats = DATA.playerStats ?? {};
   const hp = stats.Health ?? stats.hp ?? 50;
@@ -682,10 +765,6 @@ function setupInput() {
     if (state.mode === "menu") {
       startGame().catch((err) => console.error(err));
     }
-  });
-  onKeyPress("escape", () => {
-    if (state.mode === "menu") return;
-    showMenu();
   });
 }
 
@@ -751,6 +830,25 @@ function setupMovement() {
       if (hud.status && hud.info) {
         updateHud();
       }
+    }
+  });
+}
+
+function setupGameOverlayInput() {
+  onMousePress("left", () => {
+    if (state.mode !== "game") return;
+    const mouse = getMouseWorld();
+    if (!mouse) return;
+
+    if (isInsideObject(mouse, state.game.overlayBackButton)) {
+      showMenu();
+      return;
+    }
+    if (isInsideObject(mouse, state.game.overlayPlayButton)) {
+      return;
+    }
+    if (isInsideObject(mouse, state.game.overlayInventoryButton)) {
+      return;
     }
   });
 }
@@ -947,6 +1045,22 @@ function showMenu() {
   if (state.game.mapBg) {
     destroy(state.game.mapBg);
     state.game.mapBg = null;
+  }
+  if (state.game.overlayBg) {
+    destroy(state.game.overlayBg);
+    state.game.overlayBg = null;
+  }
+  if (state.game.overlayBackButton) {
+    destroy(state.game.overlayBackButton);
+    state.game.overlayBackButton = null;
+  }
+  if (state.game.overlayPlayButton) {
+    destroy(state.game.overlayPlayButton);
+    state.game.overlayPlayButton = null;
+  }
+  if (state.game.overlayInventoryButton) {
+    destroy(state.game.overlayInventoryButton);
+    state.game.overlayInventoryButton = null;
   }
   if (hud.status) {
     destroy(hud.status);
@@ -1251,9 +1365,14 @@ async function startGame() {
   hud.info = null;
   setupPlayer();
   setupHud();
+  setupGameOverlay();
   if (!state.game.movementReady) {
     setupMovement();
     state.game.movementReady = true;
+  }
+  if (!state.game.overlayInputReady) {
+    setupGameOverlayInput();
+    state.game.overlayInputReady = true;
   }
   updateHud();
 }
