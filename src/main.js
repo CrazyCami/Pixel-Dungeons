@@ -192,9 +192,11 @@ const assetState = {
   classMenuReady: false,
   customMenuReady: false,
   gameReady: false,
+  gameOverlayReady: false,
   classMenuPromise: null,
   customMenuPromise: null,
   gamePromise: null,
+  gameOverlayPromise: null,
 };
 
 const AVATARS = [
@@ -633,10 +635,6 @@ async function ensureGameAssets() {
     showLoading("Loading Map...");
     await Promise.all([
       loadSpriteOnce("map", "./data/Map/Map.png"),
-      loadSpriteOnce("mapOverlay", "./data/Map/Map%20Overlay.png"),
-      loadSpriteOnce("mapOverlayBackButton", "./data/Map/Back%20To%20Menu%20Button%20-%20Map.png"),
-      loadSpriteOnce("mapOverlayPlayButton", "./data/Map/Play%20Button%20-%20Map.png"),
-      loadSpriteOnce("mapOverlayInventoryButton", "./data/Map/Inventory%20Button%20-%20Map.png"),
       loadSpriteOnce("avatarHumanStandingRight", "./data/Avatars/Human/Human%20Standing%20Right.png"),
       loadSpriteOnce("avatarHumanStandingLeft", "./data/Avatars/Human/Human%20Standing%20Left.png"),
       loadSpriteOnce("avatarHumanStandingForwardRight", "./data/Avatars/Human/Human%20Standing%20Forward%20Right.png"),
@@ -671,6 +669,25 @@ async function ensureGameAssets() {
   } finally {
     assetState.gamePromise = null;
     hideLoading();
+  }
+}
+
+async function ensureGameOverlayAssets() {
+  if (assetState.gameOverlayReady) return;
+  if (assetState.gameOverlayPromise) return assetState.gameOverlayPromise;
+  assetState.gameOverlayPromise = (async () => {
+    await Promise.all([
+      loadSpriteOnce("mapOverlay", "./data/Map/Map%20Overlay.png"),
+      loadSpriteOnce("mapOverlayBackButton", "./data/Map/Back%20To%20Menu%20Button%20-%20Map.png"),
+      loadSpriteOnce("mapOverlayPlayButton", "./data/Map/Play%20Button%20-%20Map.png"),
+      loadSpriteOnce("mapOverlayInventoryButton", "./data/Map/Inventory%20Button%20-%20Map.png"),
+    ]);
+    assetState.gameOverlayReady = true;
+  })();
+  try {
+    await assetState.gameOverlayPromise;
+  } finally {
+    assetState.gameOverlayPromise = null;
   }
 }
 
@@ -1400,7 +1417,32 @@ async function startGame() {
   hud.info = null;
   setupPlayer();
   setupHud();
-  setupGameOverlay();
+  if (assetState.gameOverlayReady) {
+    setupGameOverlay();
+  } else {
+    if (state.game.overlayBg) {
+      destroy(state.game.overlayBg);
+      state.game.overlayBg = null;
+    }
+    if (state.game.overlayBackButton) {
+      destroy(state.game.overlayBackButton);
+      state.game.overlayBackButton = null;
+    }
+    if (state.game.overlayPlayButton) {
+      destroy(state.game.overlayPlayButton);
+      state.game.overlayPlayButton = null;
+    }
+    if (state.game.overlayInventoryButton) {
+      destroy(state.game.overlayInventoryButton);
+      state.game.overlayInventoryButton = null;
+    }
+    ensureGameOverlayAssets()
+      .then(() => {
+        if (state.mode !== "game") return;
+        setupGameOverlay();
+      })
+      .catch((err) => console.error(err));
+  }
   if (!state.game.movementReady) {
     setupMovement();
     state.game.movementReady = true;
