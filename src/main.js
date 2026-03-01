@@ -5,6 +5,9 @@ const GAME_HEIGHT = 1920;
 const UI_SCALE = 0.9;
 const MAP_ZOOM = 5;
 const MASK_MAX_DIMENSION = 2048;
+const OVERLAY_Y_OFFSET = 409.6;
+const OVERLAY_SCALE_MULTIPLIER = 0.75;
+const OVERLAY_EXTRA_DOWN_OFFSET = 0;
 const LOADING_BAR_WIDTH = 640;
 const LOADING_BAR_HEIGHT = 26;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
@@ -86,6 +89,8 @@ const {
   rect,
   pos,
   color,
+  z,
+  opacity,
   area,
   text,
   onUpdate,
@@ -149,6 +154,8 @@ const state = {
     overlayInventoryButton: null,
     movementReady: false,
     overlayInputReady: false,
+    walkMask: null,
+    spawnMask: null,
     playerWorld: null,
     facing: "right",
     lastMoveDirection: "side",
@@ -191,6 +198,10 @@ const customMenuMasks = {
 const mapMasks = {
   spawn: { data: null, width: 0, height: 0 },
   walk: { data: null, width: 0, height: 0 },
+  overlay: { data: null, width: 0, height: 0 },
+  overlayBackButton: { data: null, width: 0, height: 0 },
+  overlayPlayButton: { data: null, width: 0, height: 0 },
+  overlayInventoryButton: { data: null, width: 0, height: 0 },
 };
 
 const assetState = {
@@ -198,11 +209,11 @@ const assetState = {
   classMenuReady: false,
   customMenuReady: false,
   gameReady: false,
-  gameOverlayReady: false,
+  dungeon1Ready: false,
   classMenuPromise: null,
   customMenuPromise: null,
   gamePromise: null,
-  gameOverlayPromise: null,
+  dungeon1Promise: null,
   humanAnimPromise: null,
 };
 
@@ -464,18 +475,19 @@ function isInsideObject(mouse, obj) {
 }
 
 function isWalkableAtWorld(x, y) {
-  if (!mapMasks.walk?.data) return true;
+  const activeWalkMask = state.game.walkMask;
+  if (!activeWalkMask?.data) return true;
   const px = Math.floor(x);
   const py = Math.floor(y);
-  const sourceW = maskSourceWidth(mapMasks.walk);
-  const sourceH = maskSourceHeight(mapMasks.walk);
+  const sourceW = maskSourceWidth(activeWalkMask);
+  const sourceH = maskSourceHeight(activeWalkMask);
   if (px < 0 || py < 0 || px >= sourceW || py >= sourceH) {
     return false;
   }
-  const maskX = Math.floor((px * mapMasks.walk.width) / sourceW);
-  const maskY = Math.floor((py * mapMasks.walk.height) / sourceH);
-  const idx = (maskY * mapMasks.walk.width + maskX) * 4 + 3;
-  return mapMasks.walk.data[idx] > 10;
+  const maskX = Math.floor((px * activeWalkMask.width) / sourceW);
+  const maskY = Math.floor((py * activeWalkMask.height) / sourceH);
+  const idx = (maskY * activeWalkMask.width + maskX) * 4 + 3;
+  return activeWalkMask.data[idx] > 10;
 }
 
 function updateGameCamera() {
@@ -599,6 +611,8 @@ function showLoading(message) {
       rect(GAME_WIDTH, GAME_HEIGHT),
       pos(0, 0),
       color(0, 0, 0),
+      z(20000),
+      opacity(1),
     ]);
   }
   if (!state.loading.label) {
@@ -607,6 +621,7 @@ function showLoading(message) {
       pos(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 62),
       anchor("center"),
       color(230, 230, 230),
+      z(20001),
     ]);
   }
   if (!state.loading.barBg) {
@@ -614,6 +629,7 @@ function showLoading(message) {
       rect(LOADING_BAR_WIDTH, LOADING_BAR_HEIGHT),
       pos((GAME_WIDTH - LOADING_BAR_WIDTH) / 2, GAME_HEIGHT / 2 - (LOADING_BAR_HEIGHT / 2)),
       color(45, 45, 55),
+      z(20001),
     ]);
   }
   if (!state.loading.barFill) {
@@ -621,6 +637,7 @@ function showLoading(message) {
       rect(0, LOADING_BAR_HEIGHT),
       pos((GAME_WIDTH - LOADING_BAR_WIDTH) / 2, GAME_HEIGHT / 2 - (LOADING_BAR_HEIGHT / 2)),
       color(80, 200, 120),
+      z(20002),
     ]);
   }
   state.loading.message = message;
@@ -646,6 +663,7 @@ function updateLoadingProgress(done, total, message = state.loading.message || "
     rect(Math.max(2, LOADING_BAR_WIDTH * progress), LOADING_BAR_HEIGHT),
     pos((GAME_WIDTH - LOADING_BAR_WIDTH) / 2, GAME_HEIGHT / 2 - (LOADING_BAR_HEIGHT / 2)),
     color(80, 200, 120),
+    z(20002),
   ]);
 }
 
@@ -734,9 +752,20 @@ async function ensureGameAssets() {
   assetState.gamePromise = (async () => {
     const tasks = [
       () => loadSpriteOnce("map", "./data/Map/Map.png"),
+      () => loadSpriteOnce("mapOverlay", "./data/Map/Map%20Overlay.png"),
+      () => loadSpriteOnce("mapOverlayBackButton", "./data/Map/Back%20To%20Menu%20Button%20-%20Map.png"),
+      () => loadSpriteOnce("mapOverlayPlayButton", "./data/Map/Play%20Button%20-%20Map.png"),
+      () => loadSpriteOnce("mapOverlayInventoryButton", "./data/Map/Inventory%20Button%20-%20Map.png"),
       ...HUMAN_CORE_SPRITES.map(([name, path]) => () => loadSpriteOnce(name, path)),
       () => loadMask("./data/Map/Map%20-%20Spawn%20Area.png").then((mask) => Object.assign(mapMasks.spawn, mask)),
       () => loadMask("./data/Map/Map%20-%20Walk%20Section.png").then((mask) => Object.assign(mapMasks.walk, mask)),
+      () => loadMask("./data/Map/Map%20Overlay.png").then((mask) => Object.assign(mapMasks.overlay, mask)),
+      () => loadMask("./data/Map/Back%20To%20Menu%20Button%20-%20Map.png")
+        .then((mask) => Object.assign(mapMasks.overlayBackButton, mask)),
+      () => loadMask("./data/Map/Play%20Button%20-%20Map.png")
+        .then((mask) => Object.assign(mapMasks.overlayPlayButton, mask)),
+      () => loadMask("./data/Map/Inventory%20Button%20-%20Map.png")
+        .then((mask) => Object.assign(mapMasks.overlayInventoryButton, mask)),
     ];
     await runTasksWithProgress(tasks, "Loading Map");
     assetState.gameReady = true;
@@ -759,22 +788,21 @@ async function ensureHumanAnimationSprites() {
   return assetState.humanAnimPromise;
 }
 
-async function ensureGameOverlayAssets() {
-  if (assetState.gameOverlayReady) return;
-  if (assetState.gameOverlayPromise) return assetState.gameOverlayPromise;
-  assetState.gameOverlayPromise = (async () => {
-    await Promise.all([
-      loadSpriteOnce("mapOverlay", "./data/Map/Map%20Overlay.png"),
-      loadSpriteOnce("mapOverlayBackButton", "./data/Map/Back%20To%20Menu%20Button%20-%20Map.png"),
-      loadSpriteOnce("mapOverlayPlayButton", "./data/Map/Play%20Button%20-%20Map.png"),
-      loadSpriteOnce("mapOverlayInventoryButton", "./data/Map/Inventory%20Button%20-%20Map.png"),
-    ]);
-    assetState.gameOverlayReady = true;
+async function ensureDungeon1Assets() {
+  if (assetState.dungeon1Ready) return;
+  if (assetState.dungeon1Promise) return assetState.dungeon1Promise;
+  assetState.dungeon1Promise = (async () => {
+    const tasks = [
+      () => loadSpriteOnce("dungeon1Map", "./data/Dungeon%201/Dungeon%201.png"),
+    ];
+    await runTasksWithProgress(tasks, "Loading Dungeon 1");
+    assetState.dungeon1Ready = true;
   })();
   try {
-    await assetState.gameOverlayPromise;
+    await assetState.dungeon1Promise;
   } finally {
-    assetState.gameOverlayPromise = null;
+    assetState.dungeon1Promise = null;
+    hideLoading();
   }
 }
 
@@ -819,43 +847,73 @@ function setupGameOverlay() {
     pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
     anchor("center"),
     scale(1),
+    z(10000),
+    opacity(1),
   ]);
-  const overlayScale = fitScaleToBounds(
-    state.game.overlayBg,
-    GAME_WIDTH * 0.95,
-    GAME_HEIGHT * 0.22,
-  );
+  const overlayBounds = maskBounds(mapMasks.overlay);
+  const sourceW = maskSourceWidth(mapMasks.overlay) || state.game.overlayBg.width;
+  const sourceH = maskSourceHeight(mapMasks.overlay) || state.game.overlayBg.height;
+  const visibleW = overlayBounds
+    ? Math.max(1, overlayBounds.maxX - overlayBounds.minX)
+    : state.game.overlayBg.width;
+  const visibleH = overlayBounds
+    ? Math.max(1, overlayBounds.maxY - overlayBounds.minY)
+    : state.game.overlayBg.height;
+  const overlayScale = Math.min(
+    (GAME_WIDTH * 0.92) / visibleW,
+    (GAME_HEIGHT * 0.34) / visibleH,
+  ) * OVERLAY_SCALE_MULTIPLIER;
   state.game.overlayBg.scale = vec2(overlayScale);
-  const overlayHalfHeight = (state.game.overlayBg.height * overlayScale) / 2;
-  state.game.overlayBg.pos = vec2(GAME_WIDTH / 2, GAME_HEIGHT - overlayHalfHeight - 8);
+  if (overlayBounds) {
+    const visibleCenterX = (overlayBounds.minX + overlayBounds.maxX) / 2;
+    const visibleCenterY = (overlayBounds.minY + overlayBounds.maxY) / 2;
+    state.game.overlayBg.pos.x = GAME_WIDTH / 2 + ((sourceW / 2) - visibleCenterX) * overlayScale;
+    state.game.overlayBg.pos.y =
+      GAME_HEIGHT / 2
+      + ((sourceH / 2) - visibleCenterY) * overlayScale
+      + OVERLAY_Y_OFFSET
+      + OVERLAY_EXTRA_DOWN_OFFSET;
+  } else {
+    state.game.overlayBg.pos = vec2(
+      GAME_WIDTH / 2,
+      GAME_HEIGHT / 2 + OVERLAY_Y_OFFSET + OVERLAY_EXTRA_DOWN_OFFSET,
+    );
+  }
 
-  const buttonScale = overlayScale;
-  const buttonY = GAME_HEIGHT - 50;
+  const overlayWorldW = sourceW * overlayScale;
+  const overlayWorldH = sourceH * overlayScale;
+  const buttonScaleFor = (obj) => {
+    if (!obj?.width || !obj?.height) return overlayScale;
+    return Math.min(overlayWorldW / obj.width, overlayWorldH / obj.height);
+  };
 
   state.game.overlayBackButton = add([
     sprite("mapOverlayBackButton"),
-    pos(GAME_WIDTH / 2, buttonY),
+    pos(state.game.overlayBg.pos.x, state.game.overlayBg.pos.y),
     anchor("center"),
-    scale(buttonScale),
+    scale(1),
+    z(10001),
+    opacity(1),
   ]);
   state.game.overlayPlayButton = add([
     sprite("mapOverlayPlayButton"),
-    pos(GAME_WIDTH / 2, buttonY),
+    pos(state.game.overlayBg.pos.x, state.game.overlayBg.pos.y),
     anchor("center"),
-    scale(buttonScale),
+    scale(1),
+    z(10001),
+    opacity(1),
   ]);
   state.game.overlayInventoryButton = add([
     sprite("mapOverlayInventoryButton"),
-    pos(GAME_WIDTH / 2, buttonY),
+    pos(state.game.overlayBg.pos.x, state.game.overlayBg.pos.y),
     anchor("center"),
-    scale(buttonScale),
+    scale(1),
+    z(10001),
+    opacity(1),
   ]);
-
-  const buttonWidth = (state.game.overlayPlayButton.width || 0) * buttonScale;
-  const buttonSpacing = Math.max(110, buttonWidth * 1.1);
-  state.game.overlayBackButton.pos = vec2(GAME_WIDTH / 2 - buttonSpacing, buttonY);
-  state.game.overlayPlayButton.pos = vec2(GAME_WIDTH / 2, buttonY);
-  state.game.overlayInventoryButton.pos = vec2(GAME_WIDTH / 2 + buttonSpacing, buttonY);
+  state.game.overlayBackButton.scale = vec2(buttonScaleFor(state.game.overlayBackButton));
+  state.game.overlayPlayButton.scale = vec2(buttonScaleFor(state.game.overlayPlayButton));
+  state.game.overlayInventoryButton.scale = vec2(buttonScaleFor(state.game.overlayInventoryButton));
 }
 
 function setupPlayer() {
@@ -864,7 +922,18 @@ function setupPlayer() {
   const speed = (stats.Speed ?? stats.speed ?? 180) * 3;
   const attack = stats["Physical damage"] ?? stats.attack ?? 5;
   const magicDamage = stats["Magic Damage"] ?? stats["Magic damage"] ?? stats.magic ?? 0;
-  const spawnLocal = maskCenterLocal(mapMasks.spawn);
+  const activeSpawnMask = state.game.spawnMask;
+  let spawnLocal = null;
+  if (activeSpawnMask?.data) {
+    spawnLocal = maskCenterLocal(activeSpawnMask);
+  } else if (state.game.mapBg?.width && state.game.mapBg?.height) {
+    spawnLocal = {
+      x: state.game.mapBg.width / 2,
+      y: state.game.mapBg.height / 2,
+    };
+  } else {
+    spawnLocal = { x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 };
+  }
   state.game.playerWorld = { x: spawnLocal.x, y: spawnLocal.y };
   state.game.facing = "right";
   state.game.lastMoveDirection = "side";
@@ -904,6 +973,10 @@ function setupInput() {
     if (state.mode === "menu") {
       startGame().catch((err) => console.error(err));
     }
+  });
+  onKeyPress("escape", () => {
+    if (state.mode === "menu") return;
+    showMenu();
   });
 }
 
@@ -979,14 +1052,24 @@ function setupGameOverlayInput() {
     const mouse = getMouseWorld();
     if (!mouse) return;
 
-    if (isInsideObject(mouse, state.game.overlayBackButton)) {
+    const backScale = objectScaleValue(state.game.overlayBackButton);
+    const playScale = objectScaleValue(state.game.overlayPlayButton);
+    const inventoryScale = objectScaleValue(state.game.overlayInventoryButton);
+
+    if (isInsideMask(mapMasks.overlayBackButton, mouse, state.game.overlayBackButton.pos, backScale)) {
       showMenu();
       return;
     }
-    if (isInsideObject(mouse, state.game.overlayPlayButton)) {
+    if (isInsideMask(mapMasks.overlayPlayButton, mouse, state.game.overlayPlayButton.pos, playScale)) {
+      startDungeon1().catch((err) => console.error(err));
       return;
     }
-    if (isInsideObject(mouse, state.game.overlayInventoryButton)) {
+    if (isInsideMask(
+      mapMasks.overlayInventoryButton,
+      mouse,
+      state.game.overlayInventoryButton.pos,
+      inventoryScale,
+    )) {
       return;
     }
   });
@@ -1492,6 +1575,8 @@ async function startGame() {
     scale(1),
   ]);
   state.game.mapBg.scale = vec2(safeSpriteScale(state.game.mapBg) * MAP_ZOOM);
+  state.game.spawnMask = mapMasks.spawn;
+  state.game.walkMask = mapMasks.walk;
 
   if (state.player && typeof state.player.move === "function") {
     destroy(state.player);
@@ -1505,32 +1590,7 @@ async function startGame() {
   setupPlayer();
   setupHud();
   ensureHumanAnimationSprites().catch((err) => console.error(err));
-  if (assetState.gameOverlayReady) {
-    setupGameOverlay();
-  } else {
-    if (state.game.overlayBg) {
-      destroy(state.game.overlayBg);
-      state.game.overlayBg = null;
-    }
-    if (state.game.overlayBackButton) {
-      destroy(state.game.overlayBackButton);
-      state.game.overlayBackButton = null;
-    }
-    if (state.game.overlayPlayButton) {
-      destroy(state.game.overlayPlayButton);
-      state.game.overlayPlayButton = null;
-    }
-    if (state.game.overlayInventoryButton) {
-      destroy(state.game.overlayInventoryButton);
-      state.game.overlayInventoryButton = null;
-    }
-    ensureGameOverlayAssets()
-      .then(() => {
-        if (state.mode !== "game") return;
-        setupGameOverlay();
-      })
-      .catch((err) => console.error(err));
-  }
+  setupGameOverlay();
   if (!state.game.movementReady) {
     setupMovement();
     state.game.movementReady = true;
@@ -1539,6 +1599,53 @@ async function startGame() {
     setupGameOverlayInput();
     state.game.overlayInputReady = true;
   }
+  updateHud();
+}
+
+async function startDungeon1() {
+  if (state.game.overlayBg) {
+    destroy(state.game.overlayBg);
+    state.game.overlayBg = null;
+  }
+  if (state.game.overlayBackButton) {
+    destroy(state.game.overlayBackButton);
+    state.game.overlayBackButton = null;
+  }
+  if (state.game.overlayPlayButton) {
+    destroy(state.game.overlayPlayButton);
+    state.game.overlayPlayButton = null;
+  }
+  if (state.game.overlayInventoryButton) {
+    destroy(state.game.overlayInventoryButton);
+    state.game.overlayInventoryButton = null;
+  }
+
+  await ensureDungeon1Assets();
+  state.mode = "game";
+  if (state.menu.base) state.menu.base.hidden = true;
+  if (state.menu.hover) state.menu.hover.hidden = true;
+  if (state.game.mapBg) destroy(state.game.mapBg);
+  state.game.mapBg = add([
+    sprite("dungeon1Map"),
+    pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
+    anchor("center"),
+    scale(1),
+  ]);
+  state.game.mapBg.scale = vec2(safeSpriteScale(state.game.mapBg) * MAP_ZOOM);
+  state.game.spawnMask = null;
+  state.game.walkMask = null;
+
+  if (state.player && typeof state.player.move === "function") {
+    destroy(state.player);
+  }
+  state.player = null;
+
+  if (hud.status) destroy(hud.status);
+  if (hud.info) destroy(hud.info);
+  hud.status = null;
+  hud.info = null;
+  setupPlayer();
+  setupHud();
   updateHud();
 }
 
