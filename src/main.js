@@ -158,6 +158,7 @@ const state = {
     walkMask: null,
     spawnMask: null,
     playerWorld: null,
+    playerHitboxWorld: null,
     facing: "right",
     lastMoveDirection: "side",
     animTimer: 0,
@@ -494,6 +495,24 @@ function isWalkableAtWorld(x, y) {
   const maskY = Math.floor((py * activeWalkMask.height) / sourceH);
   const idx = (maskY * activeWalkMask.width + maskX) * 4 + 3;
   return activeWalkMask.data[idx] > 10;
+}
+
+function getHumanHitboxWorldSize(playerScale, mapScale) {
+  const mask = avatarMasks.humanWalkingHitbox;
+  if (!mask?.data) return null;
+  const bounds = maskBounds(mask);
+  const hitboxSourceW = Math.max(
+    1,
+    bounds ? bounds.maxX - bounds.minX : maskSourceWidth(mask),
+  );
+  const hitboxSourceH = Math.max(
+    1,
+    bounds ? bounds.maxY - bounds.minY : maskSourceHeight(mask),
+  );
+  return {
+    width: (hitboxSourceW * playerScale) / mapScale,
+    height: (hitboxSourceH * playerScale) / mapScale,
+  };
 }
 
 function updateGameCamera() {
@@ -947,6 +966,7 @@ function setupPlayer() {
     spawnLocal = { x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 };
   }
   state.game.playerWorld = { x: spawnLocal.x, y: spawnLocal.y };
+  state.game.playerHitboxWorld = { x: spawnLocal.x, y: spawnLocal.y, width: 0, height: 0 };
   state.game.facing = "right";
   state.game.lastMoveDirection = "side";
   state.game.animTimer = 0;
@@ -1001,39 +1021,32 @@ function setupMovement() {
     const dx = (isKeyDown("d") || isKeyDown("right")) - (isKeyDown("a") || isKeyDown("left"));
     const dy = (isKeyDown("s") || isKeyDown("down")) - (isKeyDown("w") || isKeyDown("up"));
 
+    const mapScale = state.game.mapBg?.scale?.x ?? 1;
+    const playerScale = typeof state.player.scale?.x === "number"
+      ? state.player.scale.x
+      : typeof state.player.scale === "number"
+        ? state.player.scale
+        : 1;
+    const isHumanAvatar = state.selectedAvatarId === "human";
+    const humanHitboxWorld = isHumanAvatar
+      ? getHumanHitboxWorldSize(playerScale, mapScale)
+      : null;
+    if (isHumanAvatar && !humanHitboxWorld) {
+      return;
+    }
+    const bodyHeightWorld = isHumanAvatar
+      ? humanHitboxWorld.height
+      : ((state.player.height ?? 0) * playerScale) / mapScale;
+    const bodyWidthWorld = isHumanAvatar
+      ? humanHitboxWorld.width
+      : ((state.player.width ?? 0) * playerScale) / mapScale;
+
     if (dx || dy) {
       const length = Math.hypot(dx, dy) || 1;
-      const mapScale = state.game.mapBg?.scale?.x ?? 1;
       const worldDx = ((dx / length) * state.player.speed * dt()) / mapScale;
       const worldDy = ((dy / length) * state.player.speed * dt()) / mapScale;
       const nextX = state.game.playerWorld.x + worldDx;
       const nextY = state.game.playerWorld.y + worldDy;
-      const playerScale = typeof state.player.scale?.x === "number"
-        ? state.player.scale.x
-        : typeof state.player.scale === "number"
-          ? state.player.scale
-          : 1;
-      const isHumanAvatar = state.selectedAvatarId === "human";
-      const activeHitboxMask = isHumanAvatar ? avatarMasks.humanWalkingHitbox : null;
-      const hitboxBounds = activeHitboxMask?.data ? maskBounds(activeHitboxMask) : null;
-      const hitboxSourceH = isHumanAvatar
-        ? Math.max(
-          1,
-          hitboxBounds
-            ? hitboxBounds.maxY - hitboxBounds.minY
-            : maskSourceHeight(activeHitboxMask),
-        )
-        : (state.player.height ?? 0);
-      const hitboxSourceW = isHumanAvatar
-        ? Math.max(
-          1,
-          hitboxBounds
-            ? hitboxBounds.maxX - hitboxBounds.minX
-            : maskSourceWidth(activeHitboxMask),
-        )
-        : (state.player.width ?? 0);
-      const bodyHeightWorld = (hitboxSourceH * playerScale) / mapScale;
-      const bodyWidthWorld = (hitboxSourceW * playerScale) / mapScale;
       const collisionYOffset = bodyHeightWorld > 0 ? bodyHeightWorld * 0.2 : 0;
       const sideProbeOffset = bodyWidthWorld > 0 ? bodyWidthWorld * 0.1 : 0;
       const probeY = nextY + collisionYOffset;
@@ -1045,7 +1058,15 @@ function setupMovement() {
       if (canMove) {
         state.game.playerWorld = { x: nextX, y: nextY };
       }
+
     }
+
+    state.game.playerHitboxWorld = {
+      x: state.game.playerWorld.x,
+      y: state.game.playerWorld.y,
+      width: bodyWidthWorld,
+      height: bodyHeightWorld,
+    };
 
     if (state.selectedAvatarId === "human" && typeof state.player.use === "function") {
       const moving = dx !== 0 || dy !== 0;
