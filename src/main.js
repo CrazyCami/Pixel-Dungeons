@@ -2,6 +2,7 @@ import kaplay from "https://unpkg.com/kaplay@3001.0.19/dist/kaplay.mjs";
 
 const GAME_WIDTH = 1920;
 const GAME_HEIGHT = 1920;
+const VIEWPORT_SCALE = 1.6875;
 const UI_SCALE = 0.9;
 const MAP_ZOOM = 5;
 const MASK_MAX_DIMENSION = 2048;
@@ -33,7 +34,7 @@ function fitCanvasToViewport() {
   const vw = document.documentElement.clientWidth;
   const vh = document.documentElement.clientHeight;
   const baseScale = Math.min(vw / GAME_WIDTH, vh / GAME_HEIGHT) || 1;
-  const scale = baseScale * 1.875;
+  const scale = baseScale * VIEWPORT_SCALE;
   canvas.style.width = `${Math.floor(GAME_WIDTH * scale)}px`;
   canvas.style.height = `${Math.floor(GAME_HEIGHT * scale)}px`;
 }
