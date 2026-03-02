@@ -11,7 +11,6 @@ const OVERLAY_SCALE_MULTIPLIER = 0.75;
 const OVERLAY_EXTRA_DOWN_OFFSET = 0;
 const LOADING_BAR_WIDTH = 640;
 const LOADING_BAR_HEIGHT = 26;
-const LOAD_TIMEOUT_MS = 15000;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 const loadedSpriteKeys = new Set();
@@ -278,13 +277,13 @@ function weightedChoice(entries) {
 }
 
 async function loadJson(path) {
-  const res = await fetchWithTimeout(path, path);
+  const res = await fetch(path);
   if (!res.ok) throw new Error(`Failed to load ${path}`);
   return res.json();
 }
 
 async function loadCsv(path) {
-  const res = await fetchWithTimeout(path, path);
+  const res = await fetch(path);
   if (!res.ok) throw new Error(`Failed to load ${path}`);
   const text = await res.text();
   const [headerLine, dataLine] = text.trim().split(/\r?\n/);
@@ -299,7 +298,7 @@ async function loadCsv(path) {
 }
 
 async function loadMask(path) {
-  const res = await fetchWithTimeout(path, path);
+  const res = await fetch(path);
   if (!res.ok) throw new Error(`Failed to load ${path}`);
   const blob = await res.blob();
   const bitmap = await createImageBitmap(blob);
@@ -340,7 +339,7 @@ async function loadSpriteOnce(name, path) {
     await spriteLoadPromises.get(name);
     return;
   }
-  const pending = withTimeout(loadSprite(name, path), `sprite ${path}`)
+  const pending = loadSprite(name, path)
     .then(() => {
       loadedSpriteKeys.add(name);
     })
@@ -349,35 +348,6 @@ async function loadSpriteOnce(name, path) {
     });
   spriteLoadPromises.set(name, pending);
   await pending;
-}
-
-function withTimeout(promise, label, timeoutMs = LOAD_TIMEOUT_MS) {
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(`Timed out loading ${label} after ${timeoutMs}ms`));
-    }, timeoutMs);
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    clearTimeout(timeoutId);
-  });
-}
-
-async function fetchWithTimeout(path, label = path, timeoutMs = LOAD_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, timeoutMs);
-  try {
-    return await fetch(path, { signal: controller.signal });
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      throw new Error(`Timed out loading ${label} after ${timeoutMs}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
 
 function isInsideMask(mask, mouse, basePos, scaleFactor) {
@@ -703,16 +673,10 @@ async function runTasksWithProgress(tasks, message) {
   const total = tasks.length;
   let done = 0;
   updateLoadingProgress(done, total, message);
-  await Promise.all(tasks.map(async (task, idx) => {
-    try {
-      await task();
-      done += 1;
-      updateLoadingProgress(done, total, message);
-    } catch (error) {
-      throw new Error(
-        `${message} failed on task ${idx + 1}/${total}: ${error?.message || String(error)}`,
-      );
-    }
+  await Promise.all(tasks.map(async (task) => {
+    await task();
+    done += 1;
+    updateLoadingProgress(done, total, message);
   }));
 }
 

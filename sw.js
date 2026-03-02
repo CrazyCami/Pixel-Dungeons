@@ -1,20 +1,6 @@
-const CACHE_VERSION = "pixel-dungeons-v3";
+const CACHE_VERSION = "pixel-dungeons-v2";
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
-const NETWORK_TIMEOUT_MS = 12000;
-
-async function fetchWithTimeout(request, timeoutMs = NETWORK_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, timeoutMs);
-  try {
-    const timedRequest = new Request(request, { signal: controller.signal });
-    return await fetch(timedRequest);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
@@ -61,7 +47,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
       const cache = await caches.open(PAGE_CACHE);
       try {
-        const fresh = await fetchWithTimeout(request);
+        const fresh = await fetch(request);
         cache.put(request, fresh.clone());
         return fresh;
       } catch {
@@ -83,7 +69,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith((async () => {
     const cache = await caches.open(ASSET_CACHE);
     try {
-      const fresh = await fetchWithTimeout(request);
+      const fresh = await fetch(request);
       if (fresh && fresh.ok) {
         cache.put(request, fresh.clone());
       }
