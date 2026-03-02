@@ -199,10 +199,15 @@ const customMenuMasks = {
 const mapMasks = {
   spawn: { data: null, width: 0, height: 0 },
   walk: { data: null, width: 0, height: 0 },
+  dungeon1Spawn: { data: null, width: 0, height: 0 },
+  dungeon1Walk: { data: null, width: 0, height: 0 },
   overlay: { data: null, width: 0, height: 0 },
   overlayBackButton: { data: null, width: 0, height: 0 },
   overlayPlayButton: { data: null, width: 0, height: 0 },
   overlayInventoryButton: { data: null, width: 0, height: 0 },
+};
+const avatarMasks = {
+  humanWalkingHitbox: { data: null, width: 0, height: 0 },
 };
 
 const assetState = {
@@ -758,6 +763,8 @@ async function ensureGameAssets() {
       () => loadSpriteOnce("mapOverlayPlayButton", "./data/Map/Play%20Button%20-%20Map.png"),
       () => loadSpriteOnce("mapOverlayInventoryButton", "./data/Map/Inventory%20Button%20-%20Map.png"),
       ...HUMAN_CORE_SPRITES.map(([name, path]) => () => loadSpriteOnce(name, path)),
+      () => loadMask("./data/Avatars/Human/Human%20Walking%20Hitbox.png")
+        .then((mask) => Object.assign(avatarMasks.humanWalkingHitbox, mask)),
       () => loadMask("./data/Map/Map%20-%20Spawn%20Area.png").then((mask) => Object.assign(mapMasks.spawn, mask)),
       () => loadMask("./data/Map/Map%20-%20Walk%20Section.png").then((mask) => Object.assign(mapMasks.walk, mask)),
       () => loadMask("./data/Map/Map%20Overlay.png").then((mask) => Object.assign(mapMasks.overlay, mask)),
@@ -795,6 +802,10 @@ async function ensureDungeon1Assets() {
   assetState.dungeon1Promise = (async () => {
     const tasks = [
       () => loadSpriteOnce("dungeon1Map", "./data/Dungeon%201/Dungeon%201.png"),
+      () => loadMask("./data/Dungeon%201/Dungeon%201%20-%20Spawn%20Area.png")
+        .then((mask) => Object.assign(mapMasks.dungeon1Spawn, mask)),
+      () => loadMask("./data/Dungeon%201/Dungeon%201%20-%20Walk%20Area.png")
+        .then((mask) => Object.assign(mapMasks.dungeon1Walk, mask)),
     ];
     await runTasksWithProgress(tasks, "Loading Dungeon 1");
     assetState.dungeon1Ready = true;
@@ -1002,8 +1013,28 @@ function setupMovement() {
         : typeof state.player.scale === "number"
           ? state.player.scale
           : 1;
-      const bodyHeightWorld = ((state.player.height ?? 0) * playerScale) / mapScale;
-      const bodyWidthWorld = ((state.player.width ?? 0) * playerScale) / mapScale;
+      const activeHitboxMask = state.selectedAvatarId === "human"
+        ? avatarMasks.humanWalkingHitbox
+        : null;
+      const hitboxBounds = activeHitboxMask?.data ? maskBounds(activeHitboxMask) : null;
+      const hitboxSourceH = activeHitboxMask?.data
+        ? Math.max(
+          1,
+          hitboxBounds
+            ? hitboxBounds.maxY - hitboxBounds.minY
+            : maskSourceHeight(activeHitboxMask),
+        )
+        : (state.player.height ?? 0);
+      const hitboxSourceW = activeHitboxMask?.data
+        ? Math.max(
+          1,
+          hitboxBounds
+            ? hitboxBounds.maxX - hitboxBounds.minX
+            : maskSourceWidth(activeHitboxMask),
+        )
+        : (state.player.width ?? 0);
+      const bodyHeightWorld = (hitboxSourceH * playerScale) / mapScale;
+      const bodyWidthWorld = (hitboxSourceW * playerScale) / mapScale;
       const collisionYOffset = bodyHeightWorld > 0 ? bodyHeightWorld * 0.2 : 0;
       const sideProbeOffset = bodyWidthWorld > 0 ? bodyWidthWorld * 0.1 : 0;
       const probeY = nextY + collisionYOffset;
@@ -1633,8 +1664,8 @@ async function startDungeon1() {
     scale(1),
   ]);
   state.game.mapBg.scale = vec2(safeSpriteScale(state.game.mapBg) * MAP_ZOOM);
-  state.game.spawnMask = null;
-  state.game.walkMask = null;
+  state.game.spawnMask = mapMasks.dungeon1Spawn;
+  state.game.walkMask = mapMasks.dungeon1Walk;
 
   if (state.player && typeof state.player.move === "function") {
     destroy(state.player);
