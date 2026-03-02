@@ -11,6 +11,8 @@ const OVERLAY_SCALE_MULTIPLIER = 0.75;
 const OVERLAY_EXTRA_DOWN_OFFSET = 0;
 const LOADING_BAR_WIDTH = 640;
 const LOADING_BAR_HEIGHT = 26;
+const HUMAN_SIZE_UNITS = 375;
+const HUMAN_HITBOX_Y_OFFSET_UNITS = 150;
 const menuRef = { width: GAME_WIDTH, height: GAME_HEIGHT };
 const canvas = document.querySelector("#game");
 const loadedSpriteKeys = new Set();
@@ -515,6 +517,14 @@ function getHumanHitboxWorldSize(playerScale, mapScale) {
   };
 }
 
+function applyHumanPlayerSize(playerObj) {
+  if (!playerObj?.width || !playerObj?.height) return;
+  const maxDim = Math.max(playerObj.width, playerObj.height);
+  if (!Number.isFinite(maxDim) || maxDim <= 0) return;
+  const fixedScale = HUMAN_SIZE_UNITS / maxDim;
+  playerObj.scale = vec2(fixedScale);
+}
+
 function updateGameCamera() {
   const map = state.game.mapBg;
   const player = state.player;
@@ -980,7 +990,7 @@ function setupPlayer() {
       : equippedAvatar?.sprite;
   const avatarComponents =
     initialSprite
-      ? [sprite(initialSprite), scale(0.1)]
+      ? [sprite(initialSprite), scale(1)]
       : [rect(14, 24), color(20, 20, 20)];
   state.player = add([
     ...avatarComponents,
@@ -997,6 +1007,9 @@ function setupPlayer() {
       lastHit: 0,
     },
   ]);
+  if (state.selectedAvatarId === "human") {
+    applyHumanPlayerSize(state.player);
+  }
   updateGameCamera();
 }
 
@@ -1040,6 +1053,7 @@ function setupMovement() {
     const bodyWidthWorld = isHumanAvatar
       ? humanHitboxWorld.width
       : ((state.player.width ?? 0) * playerScale) / mapScale;
+    const hitboxYOffsetWorld = isHumanAvatar ? HUMAN_HITBOX_Y_OFFSET_UNITS : 0;
 
     if (dx || dy) {
       const length = Math.hypot(dx, dy) || 1;
@@ -1049,7 +1063,7 @@ function setupMovement() {
       const nextY = state.game.playerWorld.y + worldDy;
       const collisionYOffset = bodyHeightWorld > 0 ? bodyHeightWorld * 0.2 : 0;
       const sideProbeOffset = bodyWidthWorld > 0 ? bodyWidthWorld * 0.1 : 0;
-      const probeY = nextY + collisionYOffset;
+      const probeY = nextY + hitboxYOffsetWorld + collisionYOffset;
       const canMove =
         isWalkableAtWorld(nextX, probeY)
         && isWalkableAtWorld(nextX - sideProbeOffset, probeY)
@@ -1063,7 +1077,7 @@ function setupMovement() {
 
     state.game.playerHitboxWorld = {
       x: state.game.playerWorld.x,
-      y: state.game.playerWorld.y,
+      y: state.game.playerWorld.y + hitboxYOffsetWorld,
       width: bodyWidthWorld,
       height: bodyHeightWorld,
     };
@@ -1083,6 +1097,7 @@ function setupMovement() {
       const spriteName = getHumanSpriteForMovement(dx, dy);
       if (isSpriteLoaded(spriteName) && state.player.sprite !== spriteName) {
         state.player.use(sprite(spriteName));
+        applyHumanPlayerSize(state.player);
       }
     }
 
