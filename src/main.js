@@ -1013,11 +1013,10 @@ function setupMovement() {
         : typeof state.player.scale === "number"
           ? state.player.scale
           : 1;
-      const activeHitboxMask = state.selectedAvatarId === "human"
-        ? avatarMasks.humanWalkingHitbox
-        : null;
+      const isHumanAvatar = state.selectedAvatarId === "human";
+      const activeHitboxMask = isHumanAvatar ? avatarMasks.humanWalkingHitbox : null;
       const hitboxBounds = activeHitboxMask?.data ? maskBounds(activeHitboxMask) : null;
-      const hitboxSourceH = activeHitboxMask?.data
+      const hitboxSourceH = isHumanAvatar
         ? Math.max(
           1,
           hitboxBounds
@@ -1025,7 +1024,7 @@ function setupMovement() {
             : maskSourceHeight(activeHitboxMask),
         )
         : (state.player.height ?? 0);
-      const hitboxSourceW = activeHitboxMask?.data
+      const hitboxSourceW = isHumanAvatar
         ? Math.max(
           1,
           hitboxBounds
