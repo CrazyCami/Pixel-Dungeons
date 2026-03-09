@@ -204,6 +204,8 @@ const mapMasks = {
   walk: { data: null, width: 0, height: 0 },
   dungeon1Spawn: { data: null, width: 0, height: 0 },
   dungeon1Walk: { data: null, width: 0, height: 0 },
+  dungeon2Spawn: { data: null, width: 0, height: 0 },
+  dungeon2Walk: { data: null, width: 0, height: 0 },
   overlay: { data: null, width: 0, height: 0 },
   overlayBackButton: { data: null, width: 0, height: 0 },
   overlayPlayButton: { data: null, width: 0, height: 0 },
@@ -219,10 +221,12 @@ const assetState = {
   customMenuReady: false,
   gameReady: false,
   dungeon1Ready: false,
+  dungeon2Ready: false,
   classMenuPromise: null,
   customMenuPromise: null,
   gamePromise: null,
   dungeon1Promise: null,
+  dungeon2Promise: null,
   humanAnimPromise: null,
 };
 
@@ -847,6 +851,28 @@ async function ensureDungeon1Assets() {
   }
 }
 
+async function ensureDungeon2Assets() {
+  if (assetState.dungeon2Ready) return;
+  if (assetState.dungeon2Promise) return assetState.dungeon2Promise;
+  assetState.dungeon2Promise = (async () => {
+    const tasks = [
+      () => loadSpriteOnce("dungeon2Map", "./data/Dungeon%202/Dungeon%202.png"),
+      () => loadMask("./data/Dungeon%202/Dungeon%202%20-%20Spawn%20Area.png")
+        .then((mask) => Object.assign(mapMasks.dungeon2Spawn, mask)),
+      () => loadMask("./data/Dungeon%202/Dungeon%202%20-%20Walk%20Area.png")
+        .then((mask) => Object.assign(mapMasks.dungeon2Walk, mask)),
+    ];
+    await runTasksWithProgress(tasks, "Loading Dungeon 2");
+    assetState.dungeon2Ready = true;
+  })();
+  try {
+    await assetState.dungeon2Promise;
+  } finally {
+    assetState.dungeon2Promise = null;
+    hideLoading();
+  }
+}
+
 function spinClass() {
   const spinTable = DATA.classes.spin_table;
   const classId = weightedChoice(spinTable.map((e) => [e.class_id, e.weight]));
@@ -1128,7 +1154,10 @@ function setupGameOverlayInput() {
       return;
     }
     if (isInsideMask(mapMasks.overlayPlayButton, mouse, state.game.overlayPlayButton.pos, playScale)) {
-      startDungeon1().catch((err) => console.error(err));
+      const selectedDungeon = promptDungeonSelection();
+      if (selectedDungeon) {
+        startDungeon(selectedDungeon).catch((err) => console.error(err));
+      }
       return;
     }
     if (isInsideMask(
@@ -1140,6 +1169,16 @@ function setupGameOverlayInput() {
       return;
     }
   });
+}
+
+function promptDungeonSelection() {
+  const rawSelection = window.prompt("Choose dungeon: 1 or 2", "1");
+  if (rawSelection == null) return null;
+  const selection = rawSelection.trim();
+  if (selection === "1") return 1;
+  if (selection === "2") return 2;
+  window.alert("Please enter 1 or 2.");
+  return null;
 }
 
 function setupMenu() {
@@ -1669,7 +1708,21 @@ async function startGame() {
   updateHud();
 }
 
-async function startDungeon1() {
+async function startDungeon(dungeonNumber) {
+  const dungeonConfig = dungeonNumber === 2
+    ? {
+      ensureAssets: ensureDungeon2Assets,
+      spriteName: "dungeon2Map",
+      spawnMask: mapMasks.dungeon2Spawn,
+      walkMask: mapMasks.dungeon2Walk,
+    }
+    : {
+      ensureAssets: ensureDungeon1Assets,
+      spriteName: "dungeon1Map",
+      spawnMask: mapMasks.dungeon1Spawn,
+      walkMask: mapMasks.dungeon1Walk,
+    };
+
   if (state.game.overlayBg) {
     destroy(state.game.overlayBg);
     state.game.overlayBg = null;
@@ -1687,20 +1740,20 @@ async function startDungeon1() {
     state.game.overlayInventoryButton = null;
   }
 
-  await ensureDungeon1Assets();
+  await dungeonConfig.ensureAssets();
   state.mode = "game";
   if (state.menu.base) state.menu.base.hidden = true;
   if (state.menu.hover) state.menu.hover.hidden = true;
   if (state.game.mapBg) destroy(state.game.mapBg);
   state.game.mapBg = add([
-    sprite("dungeon1Map"),
+    sprite(dungeonConfig.spriteName),
     pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
     anchor("center"),
     scale(1),
   ]);
   state.game.mapBg.scale = vec2(safeSpriteScale(state.game.mapBg) * MAP_ZOOM);
-  state.game.spawnMask = mapMasks.dungeon1Spawn;
-  state.game.walkMask = mapMasks.dungeon1Walk;
+  state.game.spawnMask = dungeonConfig.spawnMask;
+  state.game.walkMask = dungeonConfig.walkMask;
 
   if (state.player && typeof state.player.move === "function") {
     destroy(state.player);
