@@ -64,7 +64,17 @@ function scheduleFit() {
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   const isLocalhost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
-  if (!isLocalhost && location.protocol !== "https:") return;
+  if (isLocalhost) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((reg) => reg.unregister())))
+        .catch((err) => {
+          console.warn("Service worker unregister failed", err);
+        });
+    });
+    return;
+  }
+  if (location.protocol !== "https:") return;
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./sw.js").catch((err) => {
       console.warn("Service worker registration failed", err);
@@ -155,6 +165,14 @@ const state = {
     overlayBackButton: null,
     overlayPlayButton: null,
     overlayInventoryButton: null,
+    dungeonSelectOpen: false,
+    dungeonSelectDim: null,
+    dungeonSelectPanel: null,
+    dungeonSelectTitle: null,
+    dungeonSelectButton1: null,
+    dungeonSelectButton1Label: null,
+    dungeonSelectButton2: null,
+    dungeonSelectButton2Label: null,
     movementReady: false,
     overlayInputReady: false,
     walkMask: null,
@@ -276,6 +294,10 @@ function logPush(list, message, max = 6) {
 
 function isSpriteLoaded(name) {
   return loadedSpriteKeys.has(name);
+}
+
+function isMaskReady(mask) {
+  return Boolean(mask?.data && mask.width > 0 && mask.height > 0);
 }
 
 function weightedChoice(entries) {
@@ -519,6 +541,10 @@ function getHumanHitboxWorldSize(playerScale, mapScale) {
     width: (hitboxSourceW * playerScale) / mapScale,
     height: (hitboxSourceH * playerScale) / mapScale,
   };
+}
+
+function getHumanHitboxYOffsetWorld(playerScale, mapScale) {
+  return (HUMAN_HITBOX_Y_OFFSET_UNITS * playerScale) / mapScale;
 }
 
 function applyHumanPlayerSize(playerObj) {
@@ -904,6 +930,7 @@ function setupHud() {
 }
 
 function setupGameOverlay() {
+  clearDungeonSelectionMenu();
   if (state.game.overlayBg) destroy(state.game.overlayBg);
   if (state.game.overlayBackButton) destroy(state.game.overlayBackButton);
   if (state.game.overlayPlayButton) destroy(state.game.overlayPlayButton);
@@ -983,6 +1010,115 @@ function setupGameOverlay() {
   state.game.overlayInventoryButton.scale = vec2(buttonScaleFor(state.game.overlayInventoryButton));
 }
 
+function clearDungeonSelectionMenu() {
+  if (state.game.dungeonSelectDim) {
+    destroy(state.game.dungeonSelectDim);
+    state.game.dungeonSelectDim = null;
+  }
+  if (state.game.dungeonSelectPanel) {
+    destroy(state.game.dungeonSelectPanel);
+    state.game.dungeonSelectPanel = null;
+  }
+  if (state.game.dungeonSelectTitle) {
+    destroy(state.game.dungeonSelectTitle);
+    state.game.dungeonSelectTitle = null;
+  }
+  if (state.game.dungeonSelectButton1) {
+    destroy(state.game.dungeonSelectButton1);
+    state.game.dungeonSelectButton1 = null;
+  }
+  if (state.game.dungeonSelectButton1Label) {
+    destroy(state.game.dungeonSelectButton1Label);
+    state.game.dungeonSelectButton1Label = null;
+  }
+  if (state.game.dungeonSelectButton2) {
+    destroy(state.game.dungeonSelectButton2);
+    state.game.dungeonSelectButton2 = null;
+  }
+  if (state.game.dungeonSelectButton2Label) {
+    destroy(state.game.dungeonSelectButton2Label);
+    state.game.dungeonSelectButton2Label = null;
+  }
+  state.game.dungeonSelectOpen = false;
+}
+
+function openDungeonSelectionMenu() {
+  clearDungeonSelectionMenu();
+
+  const panelWidth = 700;
+  const panelHeight = 460;
+  const buttonWidth = 500;
+  const buttonHeight = 90;
+  const centerX = GAME_WIDTH / 2;
+  const centerY = GAME_HEIGHT / 2;
+
+  state.game.dungeonSelectDim = add([
+    rect(GAME_WIDTH, GAME_HEIGHT),
+    pos(0, 0),
+    color(0, 0, 0),
+    opacity(0.55),
+    z(12000),
+  ]);
+  state.game.dungeonSelectPanel = add([
+    rect(panelWidth, panelHeight),
+    pos(centerX, centerY),
+    anchor("center"),
+    color(30, 34, 42),
+    z(12001),
+  ]);
+  state.game.dungeonSelectTitle = add([
+    text("Choose a Dungeon", { size: 42 }),
+    pos(centerX, centerY - 130),
+    anchor("center"),
+    color(230, 230, 230),
+    z(12002),
+  ]);
+  state.game.dungeonSelectButton1 = add([
+    rect(buttonWidth, buttonHeight),
+    pos(centerX, centerY - 10),
+    anchor("center"),
+    color(62, 118, 194),
+    z(12002),
+  ]);
+  state.game.dungeonSelectButton1Label = add([
+    text("Dungeon 1", { size: 34 }),
+    pos(centerX, centerY - 10),
+    anchor("center"),
+    color(240, 240, 240),
+    z(12003),
+  ]);
+  state.game.dungeonSelectButton2 = add([
+    rect(buttonWidth, buttonHeight),
+    pos(centerX, centerY + 115),
+    anchor("center"),
+    color(58, 144, 106),
+    z(12002),
+  ]);
+  state.game.dungeonSelectButton2Label = add([
+    text("Dungeon 2", { size: 34 }),
+    pos(centerX, centerY + 115),
+    anchor("center"),
+    color(240, 240, 240),
+    z(12003),
+  ]);
+  state.game.dungeonSelectOpen = true;
+}
+
+function handleDungeonSelectionClick(mouse) {
+  if (!state.game.dungeonSelectOpen) return false;
+  if (isInsideObject(mouse, state.game.dungeonSelectButton1)) {
+    clearDungeonSelectionMenu();
+    startDungeon(1).catch((err) => console.error(err));
+    return true;
+  }
+  if (isInsideObject(mouse, state.game.dungeonSelectButton2)) {
+    clearDungeonSelectionMenu();
+    startDungeon(2).catch((err) => console.error(err));
+    return true;
+  }
+  return true;
+}
+
 function setupPlayer() {
   const stats = DATA.playerStats ?? {};
   const hp = stats.Health ?? stats.hp ?? 50;
@@ -1000,6 +1136,9 @@ function setupPlayer() {
     };
   } else {
     spawnLocal = { x: GAME_WIDTH / 2, y: GAME_HEIGHT / 2 };
+  }
+  if (state.game.walkMask?.data && !isWalkableAtWorld(spawnLocal.x, spawnLocal.y)) {
+    spawnLocal = maskCenterLocal(state.game.walkMask);
   }
   state.game.playerWorld = { x: spawnLocal.x, y: spawnLocal.y };
   state.game.playerHitboxWorld = { x: spawnLocal.x, y: spawnLocal.y, width: 0, height: 0 };
@@ -1079,7 +1218,9 @@ function setupMovement() {
     const bodyWidthWorld = isHumanAvatar
       ? humanHitboxWorld.width
       : ((state.player.width ?? 0) * playerScale) / mapScale;
-    const hitboxYOffsetWorld = isHumanAvatar ? HUMAN_HITBOX_Y_OFFSET_UNITS : 0;
+    const hitboxYOffsetWorld = isHumanAvatar
+      ? getHumanHitboxYOffsetWorld(playerScale, mapScale)
+      : 0;
 
     if (dx || dy) {
       const length = Math.hypot(dx, dy) || 1;
@@ -1144,6 +1285,7 @@ function setupGameOverlayInput() {
     if (state.mode !== "game") return;
     const mouse = getMouseWorld();
     if (!mouse) return;
+    if (handleDungeonSelectionClick(mouse)) return;
 
     const backScale = objectScaleValue(state.game.overlayBackButton);
     const playScale = objectScaleValue(state.game.overlayPlayButton);
@@ -1154,10 +1296,7 @@ function setupGameOverlayInput() {
       return;
     }
     if (isInsideMask(mapMasks.overlayPlayButton, mouse, state.game.overlayPlayButton.pos, playScale)) {
-      const selectedDungeon = promptDungeonSelection();
-      if (selectedDungeon) {
-        startDungeon(selectedDungeon).catch((err) => console.error(err));
-      }
+      openDungeonSelectionMenu();
       return;
     }
     if (isInsideMask(
@@ -1169,16 +1308,6 @@ function setupGameOverlayInput() {
       return;
     }
   });
-}
-
-function promptDungeonSelection() {
-  const rawSelection = window.prompt("Choose dungeon: 1 or 2", "1");
-  if (rawSelection == null) return null;
-  const selection = rawSelection.trim();
-  if (selection === "1") return 1;
-  if (selection === "2") return 2;
-  window.alert("Please enter 1 or 2.");
-  return null;
 }
 
 function setupMenu() {
@@ -1390,6 +1519,7 @@ function showMenu() {
     destroy(state.game.overlayInventoryButton);
     state.game.overlayInventoryButton = null;
   }
+  clearDungeonSelectionMenu();
   if (hud.status) {
     destroy(hud.status);
     hud.status = null;
@@ -1709,6 +1839,7 @@ async function startGame() {
 }
 
 async function startDungeon(dungeonNumber) {
+  clearDungeonSelectionMenu();
   const dungeonConfig = dungeonNumber === 2
     ? {
       ensureAssets: ensureDungeon2Assets,
@@ -1723,50 +1854,69 @@ async function startDungeon(dungeonNumber) {
       walkMask: mapMasks.dungeon1Walk,
     };
 
-  if (state.game.overlayBg) {
-    destroy(state.game.overlayBg);
-    state.game.overlayBg = null;
-  }
-  if (state.game.overlayBackButton) {
-    destroy(state.game.overlayBackButton);
-    state.game.overlayBackButton = null;
-  }
-  if (state.game.overlayPlayButton) {
-    destroy(state.game.overlayPlayButton);
-    state.game.overlayPlayButton = null;
-  }
-  if (state.game.overlayInventoryButton) {
-    destroy(state.game.overlayInventoryButton);
-    state.game.overlayInventoryButton = null;
-  }
+  try {
+    await dungeonConfig.ensureAssets();
+    if (!isSpriteLoaded(dungeonConfig.spriteName)) {
+      throw new Error(`Missing sprite: ${dungeonConfig.spriteName}`);
+    }
+    if (!isMaskReady(dungeonConfig.spawnMask)) {
+      throw new Error(`Missing spawn mask for dungeon ${dungeonNumber}`);
+    }
+    if (!isMaskReady(dungeonConfig.walkMask)) {
+      throw new Error(`Missing walk mask for dungeon ${dungeonNumber}`);
+    }
 
-  await dungeonConfig.ensureAssets();
-  state.mode = "game";
-  if (state.menu.base) state.menu.base.hidden = true;
-  if (state.menu.hover) state.menu.hover.hidden = true;
-  if (state.game.mapBg) destroy(state.game.mapBg);
-  state.game.mapBg = add([
-    sprite(dungeonConfig.spriteName),
-    pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
-    anchor("center"),
-    scale(1),
-  ]);
-  state.game.mapBg.scale = vec2(safeSpriteScale(state.game.mapBg) * MAP_ZOOM);
-  state.game.spawnMask = dungeonConfig.spawnMask;
-  state.game.walkMask = dungeonConfig.walkMask;
+    showLoading(`Entering Dungeon ${dungeonNumber}...`);
 
-  if (state.player && typeof state.player.move === "function") {
-    destroy(state.player);
+    if (state.game.overlayBg) {
+      destroy(state.game.overlayBg);
+      state.game.overlayBg = null;
+    }
+    if (state.game.overlayBackButton) {
+      destroy(state.game.overlayBackButton);
+      state.game.overlayBackButton = null;
+    }
+    if (state.game.overlayPlayButton) {
+      destroy(state.game.overlayPlayButton);
+      state.game.overlayPlayButton = null;
+    }
+    if (state.game.overlayInventoryButton) {
+      destroy(state.game.overlayInventoryButton);
+      state.game.overlayInventoryButton = null;
+    }
+
+    state.mode = "game";
+    if (state.menu.base) state.menu.base.hidden = true;
+    if (state.menu.hover) state.menu.hover.hidden = true;
+    if (state.game.mapBg) destroy(state.game.mapBg);
+    state.game.mapBg = add([
+      sprite(dungeonConfig.spriteName),
+      pos(GAME_WIDTH / 2, GAME_HEIGHT / 2),
+      anchor("center"),
+      scale(1),
+    ]);
+    state.game.mapBg.scale = vec2(safeSpriteScale(state.game.mapBg) * MAP_ZOOM);
+    state.game.spawnMask = dungeonConfig.spawnMask;
+    state.game.walkMask = dungeonConfig.walkMask;
+
+    if (state.player && typeof state.player.move === "function") {
+      destroy(state.player);
+    }
+    state.player = null;
+
+    if (hud.status) destroy(hud.status);
+    if (hud.info) destroy(hud.info);
+    hud.status = null;
+    hud.info = null;
+    setupPlayer();
+    setupHud();
+    updateHud();
+  } catch (err) {
+    console.error(err);
+    logPush(state.infoLog, `Failed to load Dungeon ${dungeonNumber}`, 4);
+  } finally {
+    hideLoading();
   }
-  state.player = null;
-
-  if (hud.status) destroy(hud.status);
-  if (hud.info) destroy(hud.info);
-  hud.status = null;
-  hud.info = null;
-  setupPlayer();
-  setupHud();
-  updateHud();
 }
 
 async function main() {

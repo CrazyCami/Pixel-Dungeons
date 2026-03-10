@@ -1,4 +1,4 @@
-const CACHE_VERSION = "pixel-dungeons-v2";
+const CACHE_VERSION = "pixel-dungeons-v3";
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 
